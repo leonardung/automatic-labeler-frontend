@@ -402,7 +402,22 @@ function ProjectDetailPage() {
     };
 
     // Function to clear labels
-    const handleClearLabels = () => {
+    const handleClearLabels = async () => {
+        try {
+            await axiosInstance.delete(`projects/${project.id}/delete_masks/`);
+        } catch (error) {
+            console.error('Error deleting masks:', error);
+        }
+        try {
+            await axiosInstance.delete(`projects/${project.id}/delete_coordinates/`);
+        } catch (error) {
+            console.error('Error deleting coordinates:', error);
+        }
+        try {
+            await axiosInstance.get(`images/unload_model/`);
+        } catch (error) {
+            console.error('Error unloading model:', error);
+        }
         setCoordinates({});
         setNotification({
             open: true,
