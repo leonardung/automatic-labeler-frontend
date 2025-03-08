@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import useImageDisplay from "./useImageDisplay";
 import axiosInstance from "../axiosInstance";
+import MaskCategoryPanel from "./MaskCategoryPanel";
+
 import { Checkbox, FormControlLabel, Box, Typography, Button, Slider } from "@mui/material";
 
 const ImageDisplaySegmentation = ({
@@ -30,6 +32,7 @@ const ImageDisplaySegmentation = ({
   const [maskRefreshTrigger, setMaskRefreshTrigger] = useState(0);
   const prevImageRef = useRef(image.id);
   const canvasRef = useRef(null);
+  const [categories, setCategories] = useState(["Category 1", "Category 2"]);
 
   useEffect(() => {
     setPoints(image.coordinates || []);
@@ -247,14 +250,38 @@ const ImageDisplaySegmentation = ({
     setMask(null);
   };
 
+  const handleAddCategory = (newCat) => {
+    setCategories((prev) => [...prev, newCat]);
+  };
+
+  const handleSelectCategory = (cat) => {
+    console.log("Selected category:", cat);
+    // handle selection logic here
+  };
+
+
+  const handleDeleteCategory = (categoryToDelete) => {
+    setCategories((prev) => prev.filter((cat) => cat !== categoryToDelete));
+    console.log("Deleted category:", categoryToDelete);
+  };
+
+
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
+      {/* Expandable Left Panel for Mask Categories */}
+      <MaskCategoryPanel
+        categories={categories}
+        onAddCategory={handleAddCategory}
+        onSelectCategory={handleSelectCategory}
+        onDeleteCategory={handleDeleteCategory}
+      />
+
       {/* Toggle for keeping zoom and pan */}
       <Box
         sx={{
           position: "absolute",
-          top: 10,
-          left: 10,
+          top: 60,
+          left: 10, // adjust to avoid overlap with the menu button
           zIndex: 1,
           backgroundColor: "rgba(250,250,250, 0.4)",
           paddingLeft: 1,
@@ -270,11 +297,7 @@ const ImageDisplaySegmentation = ({
               color="primary"
             />
           }
-          label={
-            <Typography sx={{ fontWeight: "bold" }}>
-              Keep Zoom and Pan
-            </Typography>
-          }
+          label={<Typography sx={{ fontWeight: "bold" }}>Keep Zoom and Pan</Typography>}
         />
       </Box>
 
@@ -282,7 +305,7 @@ const ImageDisplaySegmentation = ({
       <Box
         sx={{
           position: "absolute",
-          top: 60,
+          top: 110,
           left: 10,
           zIndex: 1,
           borderRadius: 1,
@@ -293,7 +316,6 @@ const ImageDisplaySegmentation = ({
           Clear Points
         </Button>
       </Box>
-
 
       <div
         ref={containerRef}
@@ -362,6 +384,7 @@ const ImageDisplaySegmentation = ({
       </div>
     </div>
   );
-};
+}
+
 
 export default ImageDisplaySegmentation;
