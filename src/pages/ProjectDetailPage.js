@@ -20,6 +20,7 @@ import ImageDisplaySegmentation from "../components/ImageDisplaySegmentation";
 import NavigationButtons from "../components/NavigationButtons";
 import Controls from "../components/Controls";
 import ThumbnailGrid from "../components/ThumbnailGrid";
+import MaskCategoryPanel from "../components/MaskCategoryPanel";
 import { AuthContext } from "../AuthContext";
 
 function ProjectDetailPage() {
@@ -29,7 +30,8 @@ function ProjectDetailPage() {
 
     const [project, setProject] = useState(null);
     const [images, setImages] = useState([]);
-    const [coordinates, setCoordinates] = useState({});
+    const [categories, setCategories] = useState([]);
+    const [activeCategoryId, setActiveCategoryId] = useState(null);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [loading, setLoading] = useState(false);
     const [notification, setNotification] = useState({
@@ -43,13 +45,15 @@ function ProjectDetailPage() {
     const modelLoadedRef = useRef(false);
     const projectType = project?.type || "segmentation";
 
-    const bustCache = (maskUrl) =>
-        maskUrl ? `${maskUrl.split("?")[0]}?t=${Date.now()}` : null;
+    const bustCache = (url) =>
+        url ? `${url.split("?")[0]}?t=${Date.now()}` : null;
 
     const decorateImage = (img) => ({
         ...img,
-        mask: bustCache(img.mask),
-        coordinates: img.coordinates || [],
+        masks: (img.masks || []).map((m) => ({
+            ...m,
+            mask: bustCache(m.mask),
+        })),
     });
 
     useEffect(() => {
@@ -58,20 +62,14 @@ function ProjectDetailPage() {
                 const response = await axiosInstance.get(`projects/${projectId}/`);
 
                 const decoratedImages = response.data.images.map(decorateImage);
-                const coordinatesMap = {};
-                decoratedImages.forEach((image) => {
-                    if (image.coordinates && image.coordinates.length > 0) {
-                        coordinatesMap[image.id] = image.coordinates.map((coord) => ({
-                            x: coord.x,
-                            y: coord.y,
-                            include: coord.include,
-                        }));
-                    }
-                });
-
-                setCoordinates(coordinatesMap);
+                setCategories(response.data.categories || []);
                 setProject({ ...response.data, images: decoratedImages });
                 setImages(decoratedImages);
+                const initialCategory =
+                    response.data.categories?.[0]?.id ||
+                    decoratedImages[0]?.masks?.[0]?.category?.id ||
+                    null;
+                setActiveCategoryId(initialCategory);
             } catch (error) {
                 console.error("Error fetching project details:", error);
                 setNotification({
@@ -275,6 +273,14 @@ function ProjectDetailPage() {
             });
             return;
         }
+        if (!activeCategoryId) {
+            setNotification({
+                open: true,
+                message: "Select a category before propagating.",
+                severity: "warning",
+            });
+            return;
+        }
         if (!projectId) {
             setNotification({
                 open: true,
@@ -287,7 +293,8 @@ function ProjectDetailPage() {
         try {
             setLoading(true);
             const response = await axiosInstance.post(`images/propagate_mask/`, {
-                project_id: projectId
+                project_id: projectId,
+                category_id: activeCategoryId,
             });
 
             if (response.data) {
@@ -297,15 +304,6 @@ function ProjectDetailPage() {
                     severity: "success",
                 });
                 const updatedImages = response.data.map(decorateImage);
-                const updatedCoordinates = {};
-                updatedImages.forEach((img) => {
-                    if (img.coordinates?.length) {
-                        updatedCoordinates[img.id] = img.coordinates;
-                    }
-                });
-                if (Object.keys(updatedCoordinates).length > 0) {
-                    setCoordinates(updatedCoordinates);
-                }
                 setImages(updatedImages);
                 setProject((prev) =>
                     prev ? { ...prev, images: updatedImages } : prev
@@ -340,35 +338,110 @@ function ProjectDetailPage() {
                 }
                 : prev
         );
-        if (normalized.coordinates) {
-            setCoordinates((prev) => ({
-                ...prev,
-                [normalized.id]: normalized.coordinates.map((coord) => ({
-                    x: coord.x,
-                    y: coord.y,
-                    include: coord.include,
-                })),
-            }));
+    };
+
+    const handleAddCategory = async (name, color) => {
+        try {
+            const response = await axiosInstance.post("categories/", {
+                name,
+                color,
+                project_id: projectId,
+            });
+            const newCat = response.data;
+            setCategories((prev) => [...prev, newCat]);
+            setActiveCategoryId(newCat.id);
+        } catch (error) {
+            console.error("Error adding category:", error);
+            setNotification({
+                open: true,
+                message: "Failed to add category.",
+                severity: "error",
+            });
         }
     };
 
-    const handlePointsUpdated = (imageId, points) => {
-        setCoordinates((prev) => ({
-            ...prev,
-            [imageId]: points,
-        }));
+    const handleDeleteCategory = async (categoryId) => {
+        try {
+            await axiosInstance.delete(`categories/${categoryId}/`);
+            setCategories((prev) => {
+                const filtered = prev.filter((c) => c.id !== categoryId);
+                if (activeCategoryId === categoryId) {
+                    setActiveCategoryId(filtered[0]?.id || null);
+                }
+                return filtered;
+            });
+            setImages((prev) =>
+                prev.map((img) => ({
+                    ...img,
+                    masks: (img.masks || []).filter((m) => m.category?.id !== categoryId),
+                }))
+            );
+        } catch (error) {
+            console.error("Error deleting category:", error);
+            setNotification({
+                open: true,
+                message: "Failed to delete category.",
+                severity: "error",
+            });
+        }
+    };
+
+    const handleColorChange = async (categoryId, color) => {
+        try {
+            const response = await axiosInstance.patch(`categories/${categoryId}/`, { color });
+            const updated = response.data;
+            setCategories((prev) =>
+                prev.map((c) => (c.id === categoryId ? { ...c, color: updated.color } : c))
+            );
+            setImages((prev) =>
+                prev.map((img) => ({
+                    ...img,
+                    masks: (img.masks || []).map((m) =>
+                        m.category?.id === categoryId
+                            ? { ...m, category: { ...m.category, color: updated.color } }
+                            : m
+                    ),
+                }))
+            );
+        } catch (error) {
+            console.error("Error updating color:", error);
+        }
+    };
+
+    useEffect(() => {
+        // keep masks in sync with category colors
         setImages((prev) =>
-            prev.map((img) =>
-                img.id === imageId ? { ...img, coordinates: points } : img
-            )
+            prev.map((img) => ({
+                ...img,
+                masks: (img.masks || []).map((m) => {
+                    const cat = categories.find((c) => c.id === m.category?.id);
+                    return cat ? { ...m, category: { ...m.category, color: cat.color } } : m;
+                }),
+            }))
+        );
+    }, [categories]);
+
+    const handlePointsUpdated = (imageId, categoryId, points) => {
+        setImages((prev) =>
+            prev.map((img) => {
+                if (img.id !== imageId) return img;
+                const updatedMasks = (img.masks || []).map((m) =>
+                    m.category?.id === categoryId ? { ...m, points } : m
+                );
+                return { ...img, masks: updatedMasks };
+            })
         );
         setProject((prev) =>
             prev
                 ? {
                     ...prev,
-                    images: prev.images.map((img) =>
-                        img.id === imageId ? { ...img, coordinates: points } : img
-                    ),
+                    images: prev.images.map((img) => {
+                        if (img.id !== imageId) return img;
+                        const updatedMasks = (img.masks || []).map((m) =>
+                            m.category?.id === categoryId ? { ...m, points } : m
+                        );
+                        return { ...img, masks: updatedMasks };
+                    }),
                 }
                 : prev
         );
@@ -383,21 +456,14 @@ function ProjectDetailPage() {
             console.error('Error deleting masks:', error);
         }
         try {
-            await axiosInstance.delete(`projects/${project.id}/delete_coordinates/`);
-        } catch (error) {
-            console.error('Error deleting coordinates:', error);
-        }
-        try {
             await axiosInstance.get(`images/unload_model/`);
         } catch (error) {
             console.error('Error unloading model:', error);
         }
-        setCoordinates({});
         setImages((prev) =>
             prev.map((img) => ({
                 ...img,
-                mask: null,
-                coordinates: [],
+                masks: [],
             }))
         );
         setProject((prev) =>
@@ -406,8 +472,7 @@ function ProjectDetailPage() {
                     ...prev,
                     images: prev.images.map((img) => ({
                         ...img,
-                        mask: null,
-                        coordinates: [],
+                        masks: [],
                     })),
                 }
                 : prev
@@ -502,81 +567,61 @@ function ProjectDetailPage() {
             </Box>
             {loading && <LinearProgress />}
             {images.length > 0 ? (
-                <Box
-                    display="flex"
-                    flexGrow={1}
-                    p={2}
-                    height="100vh"
-                    overflow="auto"
-                >
-                    <Box width="350px" overflow="auto">
-                        <ThumbnailGrid
-                            images={images}
-                            onThumbnailClick={handleThumbnailClick}
-                            currentIndex={currentIndex}
-                            coordinates={coordinates}
+                <Box display="flex" flexDirection="column" flexGrow={1} height="100%" overflow="hidden">
+                    <Box display="flex" flexGrow={1} overflow="hidden">
+                        <MaskCategoryPanel
+                            categories={categories}
+                            activeCategoryId={activeCategoryId}
+                            onSelectCategory={setActiveCategoryId}
+                            onAddCategory={handleAddCategory}
+                            onDeleteCategory={handleDeleteCategory}
+                            onColorChange={handleColorChange}
                         />
-                    </Box>
-                    <Box
-                        flexGrow={1}
-                        ml={2}
-                        display="flex"
-                        flexDirection="column"
-                        overflow="hidden"
-                    >
-                        <Box
-                            display="flex"
-                            flexDirection="row"
-                            flexGrow={1}
-                            overflow="auto"
-                        >
-                            <Box
-                                display="flex"
-                                flexDirection="column"
-                                flexGrow={1}
-                                overflow="auto"
-                            >
+                        <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
+                            <Box display="flex" flexGrow={1} overflow="hidden">
                                 <Box flexGrow={1} display="flex" overflow="hidden">
                                     <ImageDisplaySegmentation
                                         image={images[currentIndex]}
+                                        categories={categories}
+                                        activeCategoryId={activeCategoryId}
                                         onImageUpdated={handleImageUpdated}
                                         onPointsUpdated={handlePointsUpdated}
+                                        onRequireCategory={() =>
+                                            setNotification({
+                                                open: true,
+                                                message: "Create/select a category before adding points.",
+                                                severity: "info",
+                                            })
+                                        }
                                     />
                                 </Box>
-
-                                <Box mr={1}>
-                                    <Typography
-                                        variant="body1"
-                                        color="textSecondary"
-                                        fontWeight="bold"
-                                    >
-                                        {coordinates[images[currentIndex].id]?.length
-                                            ? `${coordinates[images[currentIndex].id].length} point(s)`
-                                            : "No points saved"}
-                                    </Typography>
+                                <Box
+                                    width={80}
+                                    display="flex"
+                                    flexDirection="column"
+                                    justifyContent="center"
+                                    alignItems="flex-start"
+                                >
+                                    <NavigationButtons
+                                        onPrev={handlePrevImage}
+                                        onNext={handleNextImage}
+                                        disablePrev={currentIndex === 0}
+                                        disableNext={currentIndex === images.length - 1}
+                                    />
+                                    <Controls
+                                        projectType={projectType}
+                                        onPropagate={handlePropagateMask}
+                                        onClearLabels={handleClearLabels}
+                                    />
                                 </Box>
-                            </Box>
-                            <Box
-                                width={60}
-                                display="flex"
-                                flexDirection="column"
-                                justifyContent="center"
-                                alignItems="flex-start"
-                            >
-                                <NavigationButtons
-                                    onPrev={handlePrevImage}
-                                    onNext={handleNextImage}
-                                    disablePrev={currentIndex === 0}
-                                    disableNext={currentIndex === images.length - 1}
-                                />
-                                <Controls
-                                    projectType={projectType}
-                                    onPropagate={handlePropagateMask}
-                                    onClearLabels={handleClearLabels}
-                                />
                             </Box>
                         </Box>
                     </Box>
+                    <ThumbnailGrid
+                        images={images}
+                        onThumbnailClick={handleThumbnailClick}
+                        currentIndex={currentIndex}
+                    />
                 </Box>
             ) : (
                 <Typography variant="body1" color="textSecondary" align="center">
