@@ -65,6 +65,10 @@ function ProjectDetailPage() {
                 setCategories(response.data.categories || []);
                 setProject({ ...response.data, images: decoratedImages });
                 setImages(decoratedImages);
+                setTimeout(() => {
+                    // trigger mask redraw after initial layout
+                    setImages((prev) => prev.map((img) => ({ ...img })));
+                }, 0);
                 const initialCategory =
                     response.data.categories?.[0]?.id ||
                     decoratedImages[0]?.masks?.[0]?.category?.id ||

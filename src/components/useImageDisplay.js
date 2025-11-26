@@ -166,7 +166,7 @@ const useImageDisplay = (imageSrc) => {
     // Determine the new zoom level
     const delta = event.deltaY;
     let newZoomLevel = zoomLevel * (delta > 0 ? 0.85 : 1.15);
-    newZoomLevel = Math.max(0.25, Math.min(newZoomLevel, 5)); // Limit zoom level
+    newZoomLevel = Math.max(0.05, Math.min(newZoomLevel, 5)); // Allow further zoom out
 
     const zoomFactor = newZoomLevel / zoomLevel;
 
