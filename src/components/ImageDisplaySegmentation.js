@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import useImageDisplay from "./useImageDisplay";
 import axiosInstance from "../axiosInstance";
 
@@ -35,7 +35,7 @@ const ImageDisplaySegmentation = ({
     (m) => m.category?.id === activeCategoryId
   );
   const activeCategory = categories.find((c) => c.id === activeCategoryId);
-  const [maskVersion, setMaskVersion] = useState(Date.now());
+  const maskVersion = useMemo(() => Date.now(), [image.id, image.masks]);
   const canvasRef = useRef(null);
   const parseTint = (color) => {
     if (!color) return { r: 0, g: 200, b: 0, a: 0.4 };
@@ -128,24 +128,19 @@ const ImageDisplaySegmentation = ({
       );
       setPoints(updatedActiveMask?.points || []);
       onImageUpdated?.(updatedImage);
-      setMaskVersion(Date.now());
     } catch (error) {
       console.error("Error generating mask:", error);
     }
   };
 
-  useEffect(() => {
-    // bump version when masks change
-    setMaskVersion(Date.now());
-  }, [image.id, image.masks]);
-
   const versionedUrl = (url) => {
     if (!url) return null;
-    const sep = url.includes("?") ? "&" : "?";
-    return `${url}${sep}v=${maskVersion}`;
+    const base = url.split("?")[0];
+    return `${base}?v=${maskVersion}`;
   };
 
   useEffect(() => {
+    let cancelled = false;
     const canvas = canvasRef.current;
     if (!canvas || imgDimensions.width === 0 || imgDimensions.height === 0) return;
     const ctx = canvas.getContext("2d");
@@ -169,7 +164,7 @@ const ImageDisplaySegmentation = ({
 
     Promise.all(loaders)
       .then((loaded) => {
-        if (!loaded.length) return;
+        if (cancelled || !loaded.length) return;
         const { img: firstImg } = loaded[0];
         canvas.width = firstImg.width;
         canvas.height = firstImg.height;
@@ -202,8 +197,14 @@ const ImageDisplaySegmentation = ({
         });
       })
       .catch(() => {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!cancelled) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [image.masks, imgDimensions.width, imgDimensions.height, maskVersion]);
 
 
