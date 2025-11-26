@@ -22,7 +22,7 @@ const StyledGrid = styled(FixedSizeGrid)(({ theme }) => ({
   },
 }));
 
-function ThumbnailGrid({ images, onThumbnailClick, currentIndex, coordinates }) {
+function ThumbnailGrid({ images, onThumbnailClick, currentIndex, coordinates = {} }) {
   const gridRef = useRef(null);
   const columnCount = 4;
   const rowCount = Math.ceil(images.length / columnCount);
@@ -32,7 +32,7 @@ function ThumbnailGrid({ images, onThumbnailClick, currentIndex, coordinates }) 
     if (index >= images.length) return null;
 
     const image = images[index];
-    const hasCoordinates = coordinates[images[index].id];
+    const hasLabel = image.mask || (coordinates[images[index].id] && coordinates[images[index].id].length > 0);
 
     return (
       <Box
@@ -57,10 +57,10 @@ function ThumbnailGrid({ images, onThumbnailClick, currentIndex, coordinates }) 
             width: "100%",
             height: "100%",
             objectFit: "cover",
-            opacity: hasCoordinates ? 1 : 0.9,
+            opacity: hasLabel ? 1 : 0.9,
           }}
         />
-        {!hasCoordinates && (
+        {!hasLabel && (
           <Box
             position="absolute"
             top={0}

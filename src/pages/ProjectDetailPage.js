@@ -16,11 +16,9 @@ import {
     TextField,
 } from "@mui/material";
 
-import ImageDisplayCoordinate from "../components/ImageDisplayCoordinate";
 import ImageDisplaySegmentation from "../components/ImageDisplaySegmentation";
 import NavigationButtons from "../components/NavigationButtons";
 import Controls from "../components/Controls";
-import ProgressBar from "../components/ProgressBar";
 import ThumbnailGrid from "../components/ThumbnailGrid";
 import { AuthContext } from "../AuthContext";
 
@@ -30,12 +28,9 @@ function ProjectDetailPage() {
     const { logoutUser } = useContext(AuthContext);
 
     const [project, setProject] = useState(null);
-    const [modelType, setModelType] = useState("video_tracking_segmentation"); // Default type
     const [images, setImages] = useState([]);
     const [coordinates, setCoordinates] = useState({});
     const [currentIndex, setCurrentIndex] = useState(0);
-    const [progress, setProgress] = useState(0);
-    const [masks, setMasks] = useState({});
     const [loading, setLoading] = useState(false);
     const [notification, setNotification] = useState({
         open: false,
@@ -46,27 +41,37 @@ function ProjectDetailPage() {
     const [maxFrames, setMaxFrames] = useState(500);
     const [stride, setStride] = useState(1);
     const modelLoadedRef = useRef(false);
+    const projectType = project?.type || "segmentation";
 
+    const bustCache = (maskUrl) =>
+        maskUrl ? `${maskUrl.split("?")[0]}?t=${Date.now()}` : null;
+
+    const decorateImage = (img) => ({
+        ...img,
+        mask: bustCache(img.mask),
+        coordinates: img.coordinates || [],
+    });
 
     useEffect(() => {
         const fetchProject = async () => {
             try {
                 const response = await axiosInstance.get(`projects/${projectId}/`);
 
+                const decoratedImages = response.data.images.map(decorateImage);
                 const coordinatesMap = {};
-                response.data.images.forEach((image) => {
+                decoratedImages.forEach((image) => {
                     if (image.coordinates && image.coordinates.length > 0) {
                         coordinatesMap[image.id] = image.coordinates.map((coord) => ({
                             x: coord.x,
                             y: coord.y,
+                            include: coord.include,
                         }));
                     }
                 });
 
                 setCoordinates(coordinatesMap);
-                setProject(response.data);
-                setModelType(response.data.type);
-                setImages(response.data.images);
+                setProject({ ...response.data, images: decoratedImages });
+                setImages(decoratedImages);
             } catch (error) {
                 console.error("Error fetching project details:", error);
                 setNotification({
@@ -86,9 +91,9 @@ function ProjectDetailPage() {
 
     useEffect(() => {
         const requiresModel =
-            project?.type === "segmentation" ||
-            project?.type === "video_tracking_segmentation";
-        if (!requiresModel || modelLoadedRef.current) {
+            projectType === "segmentation" ||
+            projectType === "video_tracking_segmentation";
+        if (!project || !requiresModel || modelLoadedRef.current) {
             return;
         }
 
@@ -112,7 +117,7 @@ function ProjectDetailPage() {
         };
 
         loadModel();
-    }, [project?.type, projectId]);
+    }, [projectType, projectId]);
 
 
     useEffect(() => {
@@ -135,7 +140,7 @@ function ProjectDetailPage() {
 
     // Function to select and upload images
     const handleSelectFolder = async () => {
-        if (modelType === "video_tracking_segmentation") {
+        if (projectType === "video_tracking_segmentation") {
             setOpenSettingsDialog(true); // Open the settings dialog
             return;
         }
@@ -152,7 +157,7 @@ function ProjectDetailPage() {
         const input = document.createElement("input");
         input.type = "file";
 
-        if (modelType === "video_tracking_segmentation") {
+        if (projectType === "video_tracking_segmentation") {
             input.multiple = false;
             input.accept = "video/*";
         } else {
@@ -163,16 +168,17 @@ function ProjectDetailPage() {
         input.onchange = async (event) => {
             const selectedFiles = Array.from(event.target.files);
             const filteredFiles = selectedFiles.filter((file) =>
-                modelType === "video_tracking_segmentation"
+                projectType === "video_tracking_segmentation"
                     ? file.type.startsWith("video/")
                     : file.type.startsWith("image/")
             );
 
-            setCurrentIndex(0);
-            setCoordinates({});
+            if (images.length === 0) {
+                setCurrentIndex(0);
+            }
             setLoading(true);
 
-            if (modelType === "video_tracking_segmentation" && filteredFiles.length > 0) {
+            if (projectType === "video_tracking_segmentation" && filteredFiles.length > 0) {
                 const formData = new FormData();
                 formData.append("project_id", projectId);
                 formData.append("video", filteredFiles[0]);
@@ -187,7 +193,8 @@ function ProjectDetailPage() {
                     });
 
                     if (response.data) {
-                        setImages((prevImages) => [...prevImages, ...response.data]);
+                        const newFrames = response.data.map(decorateImage);
+                        setImages((prevImages) => [...prevImages, ...newFrames]);
                     }
                 } catch (error) {
                     console.error("Error uploading video: ", error);
@@ -222,7 +229,8 @@ function ProjectDetailPage() {
                     });
 
                     if (response.data) {
-                        setImages((prevImages) => [...prevImages, ...response.data]);
+                        const newImages = response.data.map(decorateImage);
+                        setImages((prevImages) => [...prevImages, ...newImages]);
                     }
                 } catch (error) {
                     console.error("Error uploading batch: ", error);
@@ -258,68 +266,15 @@ function ProjectDetailPage() {
         setCurrentIndex(index);
     };
 
-    // Function to save coordinates to backend
-    const saveCoordinatesToBackend = async () => {
-        { console.log(coordinates) }
-        const payload = Object.entries(coordinates).map(([imageId, coords]) => ({
-            image_id: parseInt(imageId, 10),
-            coordinates: coords.map(coord => ({ x: coord.x, y: coord.y })),
-        }));
-
-        if (!coordinates) {
+    const handlePropagateMask = async () => {
+        if (projectType !== "video_tracking_segmentation") {
             setNotification({
                 open: true,
-                message: "No coordinates to save.",
-                severity: "warning",
+                message: "Mask propagation is only available for video projects.",
+                severity: "info",
             });
             return;
         }
-        try {
-            await axiosInstance.post(
-                `images/save_all_coordinates/`,
-                payload,
-                {
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                }
-            );
-            setNotification({
-                open: true,
-                message: "Coordinates saved successfully.",
-                severity: "success",
-            });
-        } catch (error) {
-            console.error("Error saving coordinates: ", error);
-            setNotification({
-                open: true,
-                message: "Error saving coordinates.",
-                severity: "error",
-            });
-        }
-    };
-
-    // Function to download labels as CSV
-    const handleSaveLabels = () => {
-        const csvContent = [
-            ["image_name", "x", "y"],
-            ...Object.entries(coordinates).map(([imageId, { x, y }]) => {
-                const image = images.find((img) => img.id === parseInt(imageId));
-                return [image ? image.image : imageId, x, y];
-            }),
-        ]
-            .map((e) => e.join(","))
-            .join("\n");
-
-        const blob = new Blob([csvContent], { type: "text/csv" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "labels.csv";
-        a.click();
-    };
-
-    const handlePropagateMask = async () => {
         if (!projectId) {
             setNotification({
                 open: true,
@@ -341,12 +296,20 @@ function ProjectDetailPage() {
                     message: "Mask propagation completed successfully.",
                     severity: "success",
                 });
-                const updatedImages = response.data.map(image => ({
-                    ...image,
-                    mask: `${image.mask}?t=${Date.now()}`
-                }));
+                const updatedImages = response.data.map(decorateImage);
+                const updatedCoordinates = {};
+                updatedImages.forEach((img) => {
+                    if (img.coordinates?.length) {
+                        updatedCoordinates[img.id] = img.coordinates;
+                    }
+                });
+                if (Object.keys(updatedCoordinates).length > 0) {
+                    setCoordinates(updatedCoordinates);
+                }
                 setImages(updatedImages);
-
+                setProject((prev) =>
+                    prev ? { ...prev, images: updatedImages } : prev
+                );
             }
         } catch (error) {
             console.error("Error propagating mask:", error);
@@ -360,84 +323,60 @@ function ProjectDetailPage() {
         }
     };
 
-    const handleUseModel = () => {
-        if (modelType === "video_tracking_segmentation") {
-            handlePropagateMask();
-            return;
-        }
-
-        if (!projectId) {
-            setNotification({
-                open: true,
-                message: "Project ID is missing.",
-                severity: "warning",
-            });
-            return;
-        }
-
-        setProgress(0);
-
-        const socket = new WebSocket("ws://localhost:8002/ws/process-images/");
-
-        socket.onopen = () => {
-            console.log("WebSocket connection established.");
-            socket.send(
-                JSON.stringify({
-                    project_id: projectId,
-                })
-            );
-        };
-
-        socket.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data.status === "success") {
-                const { image_id, x, y } = data.coordinates || {};
-                const progress = data.progress || 0;
-                setProgress(progress);
-
-                if (image_id && x != null && y != null) {
-                    setCoordinates((prevCoordinates) => ({
-                        ...prevCoordinates,
-                        [image_id]: { x, y },
-                    }));
+    const handleImageUpdated = (updatedImage) => {
+        const normalized = decorateImage(updatedImage);
+        setImages((prev) =>
+            prev.map((img) =>
+                img.id === normalized.id ? { ...img, ...normalized } : img
+            )
+        );
+        setProject((prev) =>
+            prev
+                ? {
+                    ...prev,
+                    images: prev.images.map((img) =>
+                        img.id === normalized.id ? { ...img, ...normalized } : img
+                    ),
                 }
-            } else if (data.status === "complete") {
-                setNotification({
-                    open: true,
-                    message: "Coordinate labeling completed.",
-                    severity: "success",
-                });
-                socket.close();
-            } else if (data.status === "error") {
-                console.error("Error from server:", data.message);
-                setNotification({
-                    open: true,
-                    message: `Error: ${data.message}`,
-                    severity: "error",
-                });
-            }
-        };
+                : prev
+        );
+        if (normalized.coordinates) {
+            setCoordinates((prev) => ({
+                ...prev,
+                [normalized.id]: normalized.coordinates.map((coord) => ({
+                    x: coord.x,
+                    y: coord.y,
+                    include: coord.include,
+                })),
+            }));
+        }
+    };
 
-        socket.onerror = (error) => {
-            console.error("WebSocket error:", error);
-            setNotification({
-                open: true,
-                message: "WebSocket error occurred.",
-                severity: "error",
-            });
-            socket.close();
-        };
-
-        socket.onclose = () => {
-            console.log("WebSocket connection closed.");
-            setTimeout(() => {
-                setProgress(0);
-            }, 3000);
-        };
+    const handlePointsUpdated = (imageId, points) => {
+        setCoordinates((prev) => ({
+            ...prev,
+            [imageId]: points,
+        }));
+        setImages((prev) =>
+            prev.map((img) =>
+                img.id === imageId ? { ...img, coordinates: points } : img
+            )
+        );
+        setProject((prev) =>
+            prev
+                ? {
+                    ...prev,
+                    images: prev.images.map((img) =>
+                        img.id === imageId ? { ...img, coordinates: points } : img
+                    ),
+                }
+                : prev
+        );
     };
 
     // Function to clear labels
     const handleClearLabels = async () => {
+        if (!project) return;
         try {
             await axiosInstance.delete(`projects/${project.id}/delete_masks/`);
         } catch (error) {
@@ -454,6 +393,25 @@ function ProjectDetailPage() {
             console.error('Error unloading model:', error);
         }
         setCoordinates({});
+        setImages((prev) =>
+            prev.map((img) => ({
+                ...img,
+                mask: null,
+                coordinates: [],
+            }))
+        );
+        setProject((prev) =>
+            prev
+                ? {
+                    ...prev,
+                    images: prev.images.map((img) => ({
+                        ...img,
+                        mask: null,
+                        coordinates: [],
+                    })),
+                }
+                : prev
+        );
         setNotification({
             open: true,
             message: "Labels cleared.",
@@ -461,61 +419,11 @@ function ProjectDetailPage() {
         });
     };
 
-    const handleReloadFromDatabase = async () => {
-        try {
-            const response = await axiosInstance.get(
-                `projects/${projectId}/coordinates/`
-            );
-            if (response.data) {
-                const newCoordinates = {};
-                response.data.forEach((entry) => {
-                    if (entry.image_id && entry.coordinates) {
-                        newCoordinates[entry.image_id] = entry.coordinates.map(coord => ({
-                            x: coord.x,
-                            y: coord.y,
-                        }));
-                    }
-                });
-                setCoordinates(newCoordinates);
-                setNotification({
-                    open: true,
-                    message: "Coordinates reloaded from database.",
-                    severity: "success",
-                });
-            }
-        } catch (error) {
-            console.error("Error reloading coordinates: ", error);
-            setNotification({
-                open: true,
-                message: "Error reloading coordinates.",
-                severity: "error",
-            });
-        }
-    };
-
     // Handle notification close
     const handleNotificationClose = () => {
         setNotification((prev) => ({ ...prev, open: false }));
     };
 
-    const handleCoordinatesChange = (newCoordinate) => {
-        setCoordinates((prev) => {
-            const prevCoords = prev[images[currentIndex].id] || [];
-            if (modelType === "multi_point_coordinate") {
-                // Append the new coordinate
-                return {
-                    ...prev,
-                    [images[currentIndex].id]: [...prevCoords, newCoordinate],
-                };
-            } else {
-                // Replace with the new coordinate
-                return {
-                    ...prev,
-                    [images[currentIndex].id]: [newCoordinate],
-                };
-            }
-        });
-    };
     const handleBackToRoot = () => {
         navigate("/");
     };
@@ -531,13 +439,12 @@ function ProjectDetailPage() {
         >
             <CssBaseline />
             <Box mb={1} pt={2} pl={2} display="flex" alignItems="center">
-                {/* Conditionally render the button text based on modelType */}
                 <Button
                     variant="contained"
                     color="primary"
                     onClick={handleSelectFolder}
                 >
-                    {modelType === "video_tracking_segmentation" ? "Upload Video" : "Upload Images"}
+                    {projectType === "video_tracking_segmentation" ? "Upload Video" : "Upload Images"}
                 </Button>
                 {/* Dialog for maxFrames and stride */}
                 <Dialog open={openSettingsDialog} onClose={() => setOpenSettingsDialog(false)}>
@@ -630,26 +537,11 @@ function ProjectDetailPage() {
                                 overflow="auto"
                             >
                                 <Box flexGrow={1} display="flex" overflow="hidden">
-                                    {(modelType === "segmentation" ||
-                                        modelType === "video_tracking_segmentation") ? (
-                                        <ImageDisplaySegmentation
-                                            image={images[currentIndex]}
-                                            previousMask={masks[images[currentIndex].id]}
-                                            onMaskChange={(newMask) => {
-                                                setMasks((prevMasks) => ({
-                                                    ...prevMasks,
-                                                    [images[currentIndex].id]: newMask,
-                                                }));
-                                            }}
-                                        />
-                                    ) : (
-                                        <ImageDisplayCoordinate
-                                            image={images[currentIndex]}
-                                            coordinates={coordinates || {}}
-                                            modelType={modelType}
-                                            onCoordinatesChange={handleCoordinatesChange}
-                                        />
-                                    )}
+                                    <ImageDisplaySegmentation
+                                        image={images[currentIndex]}
+                                        onImageUpdated={handleImageUpdated}
+                                        onPointsUpdated={handlePointsUpdated}
+                                    />
                                 </Box>
 
                                 <Box mr={1}>
@@ -658,17 +550,10 @@ function ProjectDetailPage() {
                                         color="textSecondary"
                                         fontWeight="bold"
                                     >
-                                        {coordinates[images[currentIndex].id] ? (
-                                            <>
-                                                x:{" "}
-                                                {/* {coordinates[images[currentIndex].id][0].x.toFixed(0)} | y:{" "}
-                                                {coordinates[images[currentIndex].id][0].y.toFixed(0)} */}
-                                            </>
-                                        ) : (
-                                            "No coordinates available"
-                                        )}
+                                        {coordinates[images[currentIndex].id]?.length
+                                            ? `${coordinates[images[currentIndex].id].length} point(s)`
+                                            : "No points saved"}
                                     </Typography>
-                                    <ProgressBar progress={progress} />
                                 </Box>
                             </Box>
                             <Box
@@ -685,11 +570,9 @@ function ProjectDetailPage() {
                                     disableNext={currentIndex === images.length - 1}
                                 />
                                 <Controls
-                                    onSaveToDatabase={saveCoordinatesToBackend}
-                                    onDownloadLabels={handleSaveLabels}
-                                    onUseModel={handleUseModel}
+                                    projectType={projectType}
+                                    onPropagate={handlePropagateMask}
                                     onClearLabels={handleClearLabels}
-                                    onReloadFromDatabase={handleReloadFromDatabase}
                                 />
                             </Box>
                         </Box>

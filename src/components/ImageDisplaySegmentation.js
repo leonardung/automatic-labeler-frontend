@@ -3,12 +3,12 @@ import useImageDisplay from "./useImageDisplay";
 import axiosInstance from "../axiosInstance";
 import MaskCategoryPanel from "./MaskCategoryPanel";
 
-import { Checkbox, FormControlLabel, Box, Typography, Button, Slider } from "@mui/material";
+import { Checkbox, FormControlLabel, Box, Typography, Button } from "@mui/material";
 
 const ImageDisplaySegmentation = ({
   image,
-  previousMask,
-  onMaskChange,
+  onImageUpdated,
+  onPointsUpdated,
 }) => {
   const {
     imageRef,
@@ -28,25 +28,17 @@ const ImageDisplaySegmentation = ({
   } = useImageDisplay(image.image);
 
   const [points, setPoints] = useState([]);
-  const [mask, setMask] = useState(previousMask || null);
-  const [maskRefreshTrigger, setMaskRefreshTrigger] = useState(0);
-  const prevImageRef = useRef(image.id);
+  const [maskUrl, setMaskUrl] = useState(image.mask || null);
   const canvasRef = useRef(null);
   const [categories, setCategories] = useState(["Category 1", "Category 2"]);
 
   useEffect(() => {
     setPoints(image.coordinates || []);
-    console.log("image.coordinates:", image.coordinates);
-    setMask(previousMask || null);
-  }, [image]);
-
-  useEffect(() => {
-    setMask(previousMask || null);
-  }, [previousMask]);
+    setMaskUrl(image.mask ? `${image.mask.split("?")[0]}?t=${Date.now()}` : null);
+  }, [image.id, image.coordinates, image.mask]);
 
 
   const handleImageClick = (event) => {
-
     event.preventDefault();
     if (isPanning) return;
     if (!containerRef.current || !imageRef.current) return;
@@ -74,16 +66,15 @@ const ImageDisplaySegmentation = ({
     // Determine if inclusion or exclusion point
     const isInclude = event.button === 0; // Left-click for include, right-click for exclude
 
-    // Update points
-    setPoints((prevPoints) => [
-      ...prevPoints,
-      { x: imgX, y: imgY, include: isInclude },
-    ]);
-    // update image.coordinates
-    image.coordinates = [
+    const updatedPoints = [
       ...points,
       { x: imgX, y: imgY, include: isInclude },
     ];
+    setPoints(updatedPoints);
+    if (onPointsUpdated) {
+      onPointsUpdated(image.id, updatedPoints);
+    }
+    persistMask(updatedPoints);
   };
 
   // Prevent default context menu on right-click
@@ -91,44 +82,45 @@ const ImageDisplaySegmentation = ({
     event.preventDefault();
   };
 
-  const generateMask = async () => {
+  const persistMask = async (updatedPoints) => {
     try {
-      const data = {
-        coordinates: points,
-        mask_input: mask || null,
-      };
-
       const response = await axiosInstance.post(
         `images/${image.id}/generate_mask/`,
-        data,
+        {
+          coordinates: updatedPoints,
+          mask_input: maskUrl ? maskUrl.split("?")[0] : null,
+        },
         {
           headers: {
             "Content-Type": "application/json",
           },
         }
       );
-      const maskUrl = `${response.data.mask}?t=${Date.now()}`;
-      image.mask = maskUrl;
 
-      setMaskRefreshTrigger((prev) => prev + 1);
+      const nextMask = response.data.mask
+        ? `${response.data.mask.split("?")[0]}?t=${Date.now()}`
+        : null;
 
+      setMaskUrl(nextMask);
+      if (response.data.coordinates) {
+        setPoints(response.data.coordinates);
+        onPointsUpdated?.(image.id, response.data.coordinates);
+      }
+      onImageUpdated?.({ ...response.data, mask: nextMask });
     } catch (error) {
       console.error("Error generating mask:", error);
     }
   };
 
-  // Generate mask whenever points change
-  useEffect(() => {
-    if (points.length > 0 && prevImageRef.current == image.id) {
-      generateMask();
-    }
-    prevImageRef.current = image.id;
-  }, [points]);
-
 
   // Draw the mask onto the canvas whenever it changes
   useEffect(() => {
-    if (!image.mask || !canvasRef.current) {
+    if (!canvasRef.current) {
+      return;
+    }
+    if (!maskUrl) {
+      const ctx = canvasRef.current.getContext("2d");
+      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       return;
     }
 
@@ -139,7 +131,7 @@ const ImageDisplaySegmentation = ({
     const maskImg = new Image();
     // Setting crossOrigin allows reading the image data if your backend supports CORS.
     maskImg.crossOrigin = "anonymous";
-    maskImg.src = image.mask;
+    maskImg.src = maskUrl;
 
     maskImg.onload = () => {
       const maskWidth = maskImg.width;
@@ -194,7 +186,7 @@ const ImageDisplaySegmentation = ({
       // Clear the canvas (resulting in an empty/transparent mask).
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     };
-  }, [image.id, maskRefreshTrigger]);
+  }, [maskUrl, imgDimensions.width, imgDimensions.height]);
 
   const renderPoints = () => {
     return points.map((point, index) => {
@@ -236,18 +228,18 @@ const ImageDisplaySegmentation = ({
     }
     try {
       await axiosInstance.delete(`images/${image.id}/delete_mask/`);
-      image.mask = null;
     } catch (error) {
       console.error('Error deleting masks:', error);
     }
     try {
       await axiosInstance.delete(`images/${image.id}/delete_coordinates/`);
-      image.coordinates = [];
     } catch (error) {
       console.error('Error deleting coordinates:', error);
     }
     setPoints([]);
-    setMask(null);
+    setMaskUrl(null);
+    onPointsUpdated?.(image.id, []);
+    onImageUpdated?.({ ...image, mask: null, coordinates: [] });
   };
 
   const handleAddCategory = (newCat) => {
@@ -362,7 +354,7 @@ const ImageDisplaySegmentation = ({
         />
 
         {/* Render the mask overlay */}
-        {image.mask && (
+        {maskUrl && (
           <canvas
             ref={canvasRef}
             style={{
