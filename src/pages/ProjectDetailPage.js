@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axiosInstance from "../axiosInstance";
 import {
@@ -45,6 +45,7 @@ function ProjectDetailPage() {
     const [openSettingsDialog, setOpenSettingsDialog] = useState(false);
     const [maxFrames, setMaxFrames] = useState(500);
     const [stride, setStride] = useState(1);
+    const modelLoadedRef = useRef(false);
 
 
     useEffect(() => {
@@ -78,6 +79,40 @@ function ProjectDetailPage() {
 
         fetchProject();
     }, [projectId]);
+
+    useEffect(() => {
+        modelLoadedRef.current = false;
+    }, [projectId]);
+
+    useEffect(() => {
+        const requiresModel =
+            project?.type === "segmentation" ||
+            project?.type === "video_tracking_segmentation";
+        if (!requiresModel || modelLoadedRef.current) {
+            return;
+        }
+
+        const loadModel = async () => {
+            try {
+                await axiosInstance.post(`model/load_model/`);
+                modelLoadedRef.current = true;
+                setNotification({
+                    open: true,
+                    message: "Model loaded and ready.",
+                    severity: "success",
+                });
+            } catch (error) {
+                console.error("Error loading model:", error);
+                setNotification({
+                    open: true,
+                    message: "Error loading model.",
+                    severity: "error",
+                });
+            }
+        };
+
+        loadModel();
+    }, [project?.type, projectId]);
 
 
     useEffect(() => {
@@ -342,7 +377,7 @@ function ProjectDetailPage() {
 
         setProgress(0);
 
-        const socket = new WebSocket("ws://localhost:8000/ws/process-images/");
+        const socket = new WebSocket("ws://localhost:8002/ws/process-images/");
 
         socket.onopen = () => {
             console.log("WebSocket connection established.");
