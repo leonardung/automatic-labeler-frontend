@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import useImageDisplay from "./useImageDisplay";
 import axiosInstance from "../axiosInstance";
 import MaskCategoryPanel from "./MaskCategoryPanel";
@@ -29,7 +29,6 @@ const ImageDisplaySegmentation = ({
 
   const [points, setPoints] = useState([]);
   const [maskUrl, setMaskUrl] = useState(image.mask || null);
-  const canvasRef = useRef(null);
   const [categories, setCategories] = useState(["Category 1", "Category 2"]);
 
   useEffect(() => {
@@ -112,81 +111,6 @@ const ImageDisplaySegmentation = ({
     }
   };
 
-
-  // Draw the mask onto the canvas whenever it changes
-  useEffect(() => {
-    if (!canvasRef.current) {
-      return;
-    }
-    if (!maskUrl) {
-      const ctx = canvasRef.current.getContext("2d");
-      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-      return;
-    }
-
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-
-    // Create a new Image to load the mask PNG.
-    const maskImg = new Image();
-    // Setting crossOrigin allows reading the image data if your backend supports CORS.
-    maskImg.crossOrigin = "anonymous";
-    maskImg.src = maskUrl;
-
-    maskImg.onload = () => {
-      const maskWidth = maskImg.width;
-      const maskHeight = maskImg.height;
-
-      canvas.width = maskWidth;
-      canvas.height = maskHeight;
-
-      // Scale the canvas to match the image dimensions
-      canvas.style.width = `${imgDimensions.width}px`;
-      canvas.style.height = `${imgDimensions.height}px`;
-
-      // Clear the canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Draw the mask image to an offscreen canvas so we can read its pixel data.
-      const offscreenCanvas = document.createElement("canvas");
-      offscreenCanvas.width = maskWidth;
-      offscreenCanvas.height = maskHeight;
-      const offscreenCtx = offscreenCanvas.getContext("2d");
-      offscreenCtx.drawImage(maskImg, 0, 0);
-
-      // Retrieve the pixel data from the offscreen canvas.
-      const imageData = offscreenCtx.getImageData(0, 0, maskWidth, maskHeight);
-      const data = imageData.data;
-
-      // Process each pixel:
-      // For a binary PNG mask, we assume that white pixels (or those above a threshold) indicate the mask region.
-      for (let i = 0; i < data.length; i += 4) {
-        if (data[i] > 128) {
-          data[i] = 0;       // Red
-          data[i + 1] = 255; // Green
-          data[i + 2] = 0;   // Blue
-          data[i + 3] = 128; // Alpha (transparency)
-        } else {
-          data[i + 3] = 0;
-        }
-      }
-
-      // Draw the modified mask onto the main canvas.
-      ctx.putImageData(imageData, 0, 0);
-    };
-
-    maskImg.onerror = (error) => {
-      console.warn("Mask image not accessible; displaying empty mask.", error);
-
-      canvas.width = 1;
-      canvas.height = 1;
-      canvas.style.width = `${imgDimensions.width}px`;
-      canvas.style.height = `${imgDimensions.height}px`;
-
-      // Clear the canvas (resulting in an empty/transparent mask).
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    };
-  }, [maskUrl, imgDimensions.width, imgDimensions.height]);
 
   const renderPoints = () => {
     return points.map((point, index) => {
@@ -353,10 +277,9 @@ const ImageDisplaySegmentation = ({
           }}
         />
 
-        {/* Render the mask overlay */}
+        {/* Render the mask overlay via CSS masking so black stays transparent */}
         {maskUrl && (
-          <canvas
-            ref={canvasRef}
+          <div
             style={{
               position: "absolute",
               top: 0,
@@ -367,6 +290,17 @@ const ImageDisplaySegmentation = ({
               transformOrigin: "0 0",
               userSelect: "none",
               pointerEvents: "none",
+              backgroundColor: "rgba(0, 200, 0, 0.4)",
+              WebkitMaskImage: `url(${maskUrl})`,
+              maskImage: `url(${maskUrl})`,
+              WebkitMaskSize: "100% 100%",
+              maskSize: "100% 100%",
+              WebkitMaskRepeat: "no-repeat",
+              maskRepeat: "no-repeat",
+              WebkitMaskPosition: "top left",
+              maskPosition: "top left",
+              WebkitMaskMode: "luminance",
+              maskMode: "luminance",
             }}
           />
         )}
