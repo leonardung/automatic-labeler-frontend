@@ -1,10 +1,19 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { Checkbox, FormControlLabel, Box, Typography, Button } from "@mui/material";
 import useImageDisplay from "./useImageDisplay";
 import axiosInstance from "../axiosInstance";
+import type { ImageModel, MaskCategory, SegmentationMask, SegmentationPoint } from "../types";
 
-import { Checkbox, FormControlLabel, Box, Typography, Button } from "@mui/material";
+interface ImageDisplaySegmentationProps {
+  image: ImageModel;
+  categories: MaskCategory[];
+  activeCategoryId: number | null;
+  onImageUpdated?: (image: ImageModel) => void;
+  onPointsUpdated?: (imageId: number, categoryId: number, points: SegmentationPoint[]) => void;
+  onRequireCategory?: () => void;
+}
 
-const ImageDisplaySegmentation = ({
+const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
   image,
   categories,
   activeCategoryId,
@@ -29,15 +38,16 @@ const ImageDisplaySegmentation = ({
     calculateDisplayParams,
   } = useImageDisplay(image.image);
 
-  const [points, setPoints] = useState([]);
+  const [points, setPoints] = useState<SegmentationPoint[]>([]);
 
   const activeMask = (image.masks || []).find(
-    (m) => m.category?.id === activeCategoryId
+    (m: SegmentationMask) => m.category?.id === activeCategoryId
   );
   const activeCategory = categories.find((c) => c.id === activeCategoryId);
-  const maskVersion = useMemo(() => Date.now(), [image.id, image.masks]);
-  const canvasRef = useRef(null);
-  const parseTint = (color) => {
+  const [maskVersion, setMaskVersion] = useState(() => Date.now());
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const parseTint = (color?: string | null) => {
     if (!color) return { r: 0, g: 200, b: 0, a: 0.4 };
     if (color.startsWith("rgba")) {
       const [r, g, b, a] = color
@@ -56,9 +66,13 @@ const ImageDisplaySegmentation = ({
 
   useEffect(() => {
     setPoints(activeMask?.points || []);
-  }, [image.id, activeCategoryId, activeMask?.id]);
+  }, [image.id, activeCategoryId, activeMask?.id, activeMask?.points]);
 
-  const handleImageClick = (event) => {
+  useEffect(() => {
+    setMaskVersion(Date.now());
+  }, [image.id, image.masks]);
+
+  const handleImageClick = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
     if (isPanning) return;
     if (!containerRef.current || !imageRef.current) return;
@@ -73,11 +87,9 @@ const ImageDisplaySegmentation = ({
     const clickX = event.clientX - containerRect.left;
     const clickY = event.clientY - containerRect.top;
 
-    // Convert click position to image coordinates
     const imgX = (clickX - panOffset.x) / zoomLevel;
     const imgY = (clickY - panOffset.y) / zoomLevel;
 
-    // Check if click is within the image bounds
     if (
       imgX < 0 ||
       imgX > imgDimensions.width ||
@@ -87,29 +99,29 @@ const ImageDisplaySegmentation = ({
       return;
     }
 
-    // Determine if inclusion or exclusion point
-    const isInclude = event.button === 0; // Left-click for include, right-click for exclude
+    const isInclude = event.button === 0;
 
-    const updatedPoints = [
+    const updatedPoints: SegmentationPoint[] = [
       ...points,
       { x: imgX, y: imgY, include: isInclude },
     ];
     setPoints(updatedPoints);
-    onPointsUpdated?.(image.id, activeCategory.id, updatedPoints);
-    persistMask(updatedPoints);
+    if (activeCategoryId) {
+      onPointsUpdated?.(image.id, activeCategoryId, updatedPoints);
+      persistMask(updatedPoints);
+    }
   };
 
-  // Prevent default context menu on right-click
-  const handleContextMenu = (event) => {
+  const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
   };
 
-  const persistMask = async (updatedPoints) => {
+  const persistMask = async (updatedPoints: SegmentationPoint[]) => {
     if (!activeCategory) {
       return;
     }
     try {
-      const response = await axiosInstance.post(
+      const response = await axiosInstance.post<ImageModel>(
         `images/${image.id}/generate_mask/`,
         {
           coordinates: updatedPoints,
@@ -124,7 +136,7 @@ const ImageDisplaySegmentation = ({
 
       const updatedImage = response.data;
       const updatedActiveMask = updatedImage.masks?.find(
-        (m) => m.category?.id === activeCategory.id
+        (m: SegmentationMask) => m.category?.id === activeCategory.id
       );
       setPoints(updatedActiveMask?.points || []);
       onImageUpdated?.(updatedImage);
@@ -133,17 +145,18 @@ const ImageDisplaySegmentation = ({
     }
   };
 
-  const versionedUrl = (url) => {
+  const versionedUrl = useCallback((url?: string | null) => {
     if (!url) return null;
     const base = url.split("?")[0];
     return `${base}?v=${maskVersion}`;
-  };
+  }, [maskVersion]);
 
   useEffect(() => {
     let cancelled = false;
     const canvas = canvasRef.current;
     if (!canvas || imgDimensions.width === 0 || imgDimensions.height === 0) return;
     const ctx = canvas.getContext("2d");
+    if (!ctx) return;
     const masks = image.masks || [];
     if (!masks.length) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -152,13 +165,18 @@ const ImageDisplaySegmentation = ({
 
     const loaders = masks.map(
       (m) =>
-        new Promise((resolve, reject) => {
-          if (!m.mask) return reject();
+        new Promise<{ img: HTMLImageElement; mask: SegmentationMask }>((resolve, reject) => {
+          if (!m.mask) return reject(new Error("Missing mask"));
           const img = new Image();
           img.onload = () => resolve({ img, mask: m });
           img.onerror = reject;
           img.crossOrigin = "anonymous";
-          img.src = versionedUrl(m.mask);
+          const url = versionedUrl(m.mask);
+          if (url) {
+            img.src = url;
+          } else {
+            reject(new Error("Invalid mask url"));
+          }
         })
     );
 
@@ -178,11 +196,12 @@ const ImageDisplaySegmentation = ({
           off.width = img.width;
           off.height = img.height;
           const offCtx = off.getContext("2d");
+          if (!offCtx) return;
           offCtx.drawImage(img, 0, 0);
           const imageData = offCtx.getImageData(0, 0, img.width, img.height);
           const data = imageData.data;
           for (let i = 0; i < data.length; i += 4) {
-            const alpha = data[i]; // L masks draw into red channel
+            const alpha = data[i];
             if (alpha === 0) {
               data[i + 3] = 0;
               continue;
@@ -205,8 +224,7 @@ const ImageDisplaySegmentation = ({
     return () => {
       cancelled = true;
     };
-  }, [image.masks, imgDimensions.width, imgDimensions.height, maskVersion]);
-
+  }, [image.masks, imgDimensions.width, imgDimensions.height, maskVersion, versionedUrl]);
 
   const renderPoints = () => {
     return points.map((point, index) => {
@@ -224,7 +242,6 @@ const ImageDisplaySegmentation = ({
             transform: "translate(-50%, -50%)",
           }}
         >
-          {/* Circle to represent the point */}
           <div
             style={{
               width: "15px",
@@ -239,7 +256,6 @@ const ImageDisplaySegmentation = ({
     });
   };
 
-  // Function to clear points and unload model
   const clearPoints = async () => {
     if (!activeCategory) {
       onRequireCategory?.();
@@ -248,20 +264,23 @@ const ImageDisplaySegmentation = ({
     try {
       await axiosInstance.get(`images/unload_model/`);
     } catch (error) {
-      console.error('Error unloading model:', error);
+      console.error("Error unloading model:", error);
     }
     try {
-      await axiosInstance.delete(`images/${image.id}/delete_mask/?category_id=${activeCategory.id}`);
+      await axiosInstance.delete(
+        `images/${image.id}/delete_mask/?category_id=${activeCategory.id}`
+      );
     } catch (error) {
-      console.error('Error deleting masks:', error);
+      console.error("Error deleting masks:", error);
     }
     setPoints([]);
-    onPointsUpdated?.(image.id, activeCategory.id, []);
+    if (activeCategoryId) {
+      onPointsUpdated?.(image.id, activeCategoryId, []);
+    }
     onImageUpdated?.({
       ...image,
       masks: (image.masks || []).filter((m) => m.category?.id !== activeCategory.id),
     });
-    setPoints([]);
   };
 
   return (
@@ -283,7 +302,7 @@ const ImageDisplaySegmentation = ({
           control={
             <Checkbox
               checked={keepZoomPan}
-              onChange={handleToggleChange}
+              onChange={() => handleToggleChange()}
               color="primary"
             />
           }

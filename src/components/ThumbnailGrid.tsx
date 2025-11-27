@@ -1,7 +1,18 @@
 import React from "react";
 import { Box, Typography } from "@mui/material";
+import type { ImageModel } from "../types";
 
-function ThumbnailGrid({ images, onThumbnailClick, currentIndex }) {
+interface ThumbnailGridProps {
+  images: ImageModel[];
+  onThumbnailClick: (index: number) => void;
+  currentIndex: number;
+}
+
+const ThumbnailGrid: React.FC<ThumbnailGridProps> = ({
+  images,
+  onThumbnailClick,
+  currentIndex,
+}) => {
   return (
     <Box
       sx={{
@@ -17,7 +28,7 @@ function ThumbnailGrid({ images, onThumbnailClick, currentIndex }) {
       }}
     >
       {images.map((image, index) => {
-        const hasLabel = image.masks && image.masks.length > 0;
+        const hasLabel = !!(image.masks && image.masks.length > 0);
         return (
           <Box
             key={image.id}
@@ -68,7 +79,7 @@ function ThumbnailGrid({ images, onThumbnailClick, currentIndex }) {
       })}
     </Box>
   );
-}
+};
 
 export default ThumbnailGrid;
 

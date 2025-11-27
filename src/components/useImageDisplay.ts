@@ -1,21 +1,22 @@
-// useImageDisplay.js
 import { useRef, useState, useEffect } from "react";
+import type { WheelEvent as ReactWheelEvent, MouseEvent as ReactMouseEvent } from "react";
 
-const useImageDisplay = (imageSrc) => {
-  const imageRef = useRef(null);
-  const containerRef = useRef(null);
+type Point = { x: number; y: number };
 
-  // State variables
-  const [zoomLevel, setZoomLevel] = useState(1);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const [imgDimensions, setImgDimensions] = useState({ width: 0, height: 0 });
+const useImageDisplay = (imageSrc: string | null) => {
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
+  const [panOffset, setPanOffset] = useState<Point>({ x: 0, y: 0 });
+  const [imgDimensions, setImgDimensions] = useState<{ width: number; height: number }>({
+    width: 0,
+    height: 0,
+  });
   const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [panStart, setPanStart] = useState<Point>({ x: 0, y: 0 });
 
-  // State to track if the Shift key is pressed
   const [ShiftKeyPress, setShiftKeyPress] = useState(false);
-
-  // State for the toggle to keep or reset zoom and pan
   const [keepZoomPan, setKeepZoomPan] = useState(false);
 
   const calculateDisplayParams = () => {
@@ -27,11 +28,9 @@ const useImageDisplay = (imageSrc) => {
     const imgNaturalWidth = img.naturalWidth;
     const imgNaturalHeight = img.naturalHeight;
 
-    const { videoWidth, videoHeight } = imageRef.current;
     setImgDimensions({ width: imgNaturalWidth, height: imgNaturalHeight });
   };
 
-  // Function to initialize zoomLevel and panOffset
   const initializeZoomPan = () => {
     if (!imageRef.current || !containerRef.current) {
       return;
@@ -51,10 +50,8 @@ const useImageDisplay = (imageSrc) => {
     const scaleX = containerWidth / imgNaturalWidth;
     const scaleY = containerHeight / imgNaturalHeight;
 
-    // Initial zoom level to fit the image into the container
     const initialZoomLevel = Math.min(scaleX, scaleY);
 
-    // Center the image in the container
     const initialPanOffsetX =
       (containerWidth - imgNaturalWidth * initialZoomLevel) / 2;
     const initialPanOffsetY =
@@ -64,7 +61,6 @@ const useImageDisplay = (imageSrc) => {
     setPanOffset({ x: initialPanOffsetX, y: initialPanOffsetY });
   };
 
-  // useEffect to initialize zoomLevel and panOffset when the component mounts or when imageSrc changes
   useEffect(() => {
     if (!keepZoomPan) {
       initializeZoomPan();
@@ -72,17 +68,15 @@ const useImageDisplay = (imageSrc) => {
   }, [imageSrc, keepZoomPan]);
 
   useEffect(() => {
-    // Recalculate image dimensions when the image source changes
     calculateDisplayParams();
 
-    // Event listeners to track Shift key state
-    const handleKeyDown = (event) => {
+    const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Shift") {
         setShiftKeyPress(true);
       }
     };
 
-    const handleKeyUp = (event) => {
+    const handleKeyUp = (event: KeyboardEvent) => {
       if (event.key === "Shift") {
         setShiftKeyPress(false);
       }
@@ -91,7 +85,6 @@ const useImageDisplay = (imageSrc) => {
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
 
-    // Debounced resize handler
     const debouncedResizeHandler = () => {
       calculateDisplayParams();
       if (!keepZoomPan) {
@@ -99,38 +92,36 @@ const useImageDisplay = (imageSrc) => {
       }
     };
 
-    // Create debounced version of the handler
-    let timeoutId;
-    const debounce = (fn, delay) => {
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const debounce = (fn: () => void, delay: number) => {
       return () => {
         clearTimeout(timeoutId);
         timeoutId = setTimeout(fn, delay);
       };
     };
 
-    // Use ResizeObserver with debouncing and error handling
-    let resizeObserver;
-    if (containerRef.current) {
-      resizeObserver = new ResizeObserver((entries, observer) => {
+    const containerEl = containerRef.current;
+    let resizeObserver: ResizeObserver | undefined;
+    if (containerEl) {
+      resizeObserver = new ResizeObserver(() => {
         try {
           debounce(debouncedResizeHandler, 100)();
         } catch (error) {
-          console.warn('ResizeObserver error:', error);
+          console.warn("ResizeObserver error:", error);
         }
       });
-      resizeObserver.observe(containerRef.current);
+      resizeObserver.observe(containerEl);
     }
 
     return () => {
-      if (resizeObserver && containerRef.current) {
-        resizeObserver.unobserve(containerRef.current);
+      if (resizeObserver && containerEl) {
+        resizeObserver.unobserve(containerEl);
       }
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
   }, [imageSrc, keepZoomPan]);
 
-  // Add an event listener for when the image loads
   useEffect(() => {
     const img = imageRef.current;
 
@@ -152,9 +143,7 @@ const useImageDisplay = (imageSrc) => {
     };
   }, [imageSrc, keepZoomPan]);
 
-  const handleWheel = (event) => {
-    // event.preventDefault(); // Prevent default browser zoom behavior
-
+  const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
 
     const { clientX, clientY } = event;
@@ -163,14 +152,12 @@ const useImageDisplay = (imageSrc) => {
     const x = clientX - containerRect.left;
     const y = clientY - containerRect.top;
 
-    // Determine the new zoom level
     const delta = event.deltaY;
     let newZoomLevel = zoomLevel * (delta > 0 ? 0.85 : 1.15);
-    newZoomLevel = Math.max(0.05, Math.min(newZoomLevel, 5)); // Allow further zoom out
+    newZoomLevel = Math.max(0.05, Math.min(newZoomLevel, 5));
 
     const zoomFactor = newZoomLevel / zoomLevel;
 
-    // Adjust pan offset to keep the image centered on the cursor
     const newPanOffsetX = x - (x - panOffset.x) * zoomFactor;
     const newPanOffsetY = y - (y - panOffset.y) * zoomFactor;
 
@@ -178,15 +165,15 @@ const useImageDisplay = (imageSrc) => {
     setZoomLevel(newZoomLevel);
   };
 
-  const handleMouseDown = (event) => {
-    if (!event.shiftKey) return; // Only initiate panning when Shift key is pressed
+  const handleMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!event.shiftKey) return;
     event.preventDefault();
 
     setIsPanning(true);
     setPanStart({ x: event.clientX, y: event.clientY });
   };
 
-  const handleMouseMove = (event) => {
+  const handleMouseMove = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!isPanning) return;
 
     const deltaX = event.clientX - panStart.x;
@@ -204,7 +191,6 @@ const useImageDisplay = (imageSrc) => {
     setIsPanning(false);
   };
 
-  // Handler for the toggle
   const handleToggleChange = () => {
     setKeepZoomPan((prevValue) => !prevValue);
   };
@@ -224,7 +210,6 @@ const useImageDisplay = (imageSrc) => {
     handleMouseMove,
     handleMouseUp,
     calculateDisplayParams,
-    // Additional handlers or state variables if needed
   };
 };
 
