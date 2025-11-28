@@ -120,6 +120,8 @@ function MaskCategoryPanel({
         selected={activeCategoryId === category.id}
         onClick={() => onSelectCategory(category.id)}
         sx={{
+          px: 1,
+          py: 0,
           cursor: "pointer",
           color: "white",
           borderRadius: 2,

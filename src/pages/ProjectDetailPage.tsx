@@ -149,6 +149,16 @@ function ProjectDetailPage() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName;
+      const isEditable =
+        tagName === "INPUT" ||
+        tagName === "TEXTAREA" ||
+        tagName === "SELECT" ||
+        target?.getAttribute("contenteditable") === "true";
+
+      if (isEditable) return;
+
       if (event.key === "a") {
         handlePrevImage();
       } else if (event.key === "d") {
