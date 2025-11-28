@@ -46,6 +46,21 @@ const parseColor = (color?: string | null) => {
   return { hex: color, alpha: 1 };
 };
 
+const colorSwatchStyle: React.CSSProperties = {
+  width: 20,
+  height: 23,
+  minWidth: 20,
+  minHeight: 23,
+  border: "none",
+  background: "transparent",
+  cursor: "pointer",
+  borderRadius: 6,
+  padding: 0,
+  display: "inline-block",
+  flexShrink: 0,
+  appearance: "none",
+};
+
 interface MaskCategoryPanelProps {
   categories: MaskCategory[];
   activeCategoryId: number | null;
@@ -128,15 +143,7 @@ function MaskCategoryPanel({
             onChange={(e) =>
               onColorChange(category.id, rgbaFrom(e.target.value, alpha))
             }
-            style={{
-              width: 28,
-              height: 28,
-              border: "none",
-              background: "transparent",
-              marginRight: 10,
-              cursor: "pointer",
-              borderRadius: 6,
-            }}
+            style={{ ...colorSwatchStyle, marginRight: 5 }}
           />
         </Tooltip>
         <Tooltip title="Adjust opacity" arrow>
@@ -241,20 +248,12 @@ function MaskCategoryPanel({
       <Box display="flex" alignItems="center" mt={1} mb={1}>
         <Typography variant="body2" sx={{ mr: 1, color: "white" }}>Color</Typography>
         <Tooltip title="New category color" arrow>
-          <Input
+          <Box
+            component="input"
             type="color"
             value={newColor}
             onChange={(e) => setNewColor(e.target.value)}
-            inputProps={{ style: { padding: 0, width: 28, height: 28, borderRadius: 6 } }}
-            sx={{
-              width: 36,
-              height: 32,
-              "& input": {
-                padding: 0,
-                width: 28,
-                height: 28,
-              },
-            }}
+            style={{ ...colorSwatchStyle, marginRight: 5 }}
           />
         </Tooltip>
         <Box sx={{ flexGrow: 1, ml: 1 }}>
