@@ -21,27 +21,25 @@ const IconButtonWithText: React.FC<IconButtonWithTextProps> = ({
   href,
 }) => {
   const buttonStyles = {
-    display: "flex",
+    display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: "4px",
-    minWidth: "unset",
-    height: "38px",
-    width: "38px",
+    padding: "10px 16px",
+    minWidth: "auto",
+    height: "42px",
     marginTop: "8px",
-    marginRight: "8px",
-    "& span": {
-      display: "none",
+    marginRight: "12px",
+    borderRadius: "12px",
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderColor: "rgba(255, 255, 255, 0.18)",
+    color: "inherit",
+    boxShadow: "none",
+    transition: "all 0.2s ease",
+    "&:hover": {
+      transform: "translateY(-1px)",
+      backgroundColor: "rgba(90, 216, 255, 0.12)",
+      boxShadow: "0 12px 24px rgba(0,0,0,0.35)",
     },
-    "&:hover span": {
-      display: "inline",
-      marginLeft: "8px",
-    },
-  };
-
-  const textStyles = {
-    display: "none",
-    whiteSpace: "nowrap",
   };
 
   return (
@@ -52,9 +50,9 @@ const IconButtonWithText: React.FC<IconButtonWithTextProps> = ({
         onClick={onClick}
         href={href}
         sx={buttonStyles}
+        startIcon={icon}
       >
-        {icon}
-        <span style={textStyles}>{children}</span>
+        {children}
       </Button>
     </Tooltip>
   );

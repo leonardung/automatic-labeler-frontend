@@ -509,15 +509,31 @@ function ProjectDetailPage() {
         height: "100vh",
         display: "flex",
         flexDirection: "column",
-        color: "white",
+        color: "text.primary",
+        backgroundColor: "background.default",
       }}
     >
       <CssBaseline />
-      <Box mb={1} pt={2} pl={2} display="flex" alignItems="center">
+      <Box
+        mb={1}
+        pt={2}
+        pb={2}
+        px={3}
+        display="flex"
+        alignItems="center"
+        sx={{
+          gap: 2,
+          backgroundColor: "rgba(17,24,39,0.78)",
+          borderBottom: "1px solid #1f2a3d",
+          boxShadow: "0 10px 30px rgba(0,0,0,0.45)",
+          backdropFilter: "blur(8px)",
+        }}
+      >
         <Button
           variant="contained"
           color="primary"
           onClick={handleSelectFolder}
+          sx={{ boxShadow: "0 10px 30px rgba(90,216,255,0.25)" }}
         >
           {projectType === "video_tracking_segmentation" ? "Upload Video" : "Upload Images"}
         </Button>
@@ -631,7 +647,7 @@ function ProjectDetailPage() {
           />
         </Box>
       ) : (
-        <Typography variant="body1" color="textSecondary" align="center">
+        <Typography variant="body1" color="text.secondary" align="center">
           No images loaded. Please upload images.
         </Typography>
       )}

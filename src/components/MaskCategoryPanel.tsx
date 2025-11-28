@@ -5,11 +5,13 @@ import {
   ListItemText,
   IconButton,
   Button,
+  Popover,
   TextField,
   Typography,
   Box,
   Input,
   Slider,
+  Tooltip,
 } from "@mui/material";
 import { Delete } from "@mui/icons-material";
 import type { MaskCategory } from "../types";
@@ -64,6 +66,8 @@ function MaskCategoryPanel({
   const [newCategory, setNewCategory] = useState("");
   const [newColor, setNewColor] = useState("#00c800");
   const [newOpacity, setNewOpacity] = useState(0.5);
+  const [opacityAnchors, setOpacityAnchors] = useState<Record<number, HTMLElement | null>>({});
+  const [localAlpha, setLocalAlpha] = useState<Record<number, number>>({});
 
   const handleAdd = () => {
     if (newCategory.trim() !== "") {
@@ -72,39 +76,127 @@ function MaskCategoryPanel({
     }
   };
 
+  React.useEffect(() => {
+    setLocalAlpha((prev) => {
+      const next: Record<number, number> = {};
+      categories.forEach((c) => {
+        const { alpha } = parseColor(c.color);
+        next[c.id] = prev[c.id] ?? alpha;
+      });
+      return next;
+    });
+  }, [categories]);
+
+  const handleOpenOpacity = (categoryId: number, event: React.MouseEvent<HTMLElement>) => {
+    setOpacityAnchors((prev) => ({ ...prev, [categoryId]: event.currentTarget }));
+  };
+
+  const handleCloseOpacity = (categoryId: number) => {
+    setOpacityAnchors((prev) => ({ ...prev, [categoryId]: null }));
+  };
+
   const renderCategory = (category: MaskCategory) => {
     const { hex, alpha } = parseColor(category.color);
+    const alphaValue = localAlpha[category.id] ?? alpha;
+    const anchor = opacityAnchors[category.id] ?? null;
     return (
       <ListItemButton
         key={category.id}
         selected={activeCategoryId === category.id}
         onClick={() => onSelectCategory(category.id)}
-        sx={{ cursor: "pointer", color: "white" }}
+        sx={{
+          cursor: "pointer",
+          color: "white",
+          borderRadius: 2,
+          mb: 1,
+          border: "1px solid transparent",
+          "&.Mui-selected": {
+            backgroundColor: "rgba(90,216,255,0.14)",
+            borderColor: "rgba(90,216,255,0.35)",
+          },
+          "&:hover": {
+            backgroundColor: "rgba(255,255,255,0.04)",
+          },
+        }}
       >
-        <Box
-          component="input"
-          type="color"
-          value={hex}
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) =>
-            onColorChange(category.id, rgbaFrom(e.target.value, alpha))
-          }
-          style={{ width: 32, height: 24, border: "none", background: "transparent", marginRight: 8 }}
-        />
-        <Box sx={{ width: 90, mr: 1 }}>
+        <Tooltip title="Change color" arrow>
+          <Box
+            component="input"
+            type="color"
+            value={hex}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) =>
+              onColorChange(category.id, rgbaFrom(e.target.value, alpha))
+            }
+            style={{
+              width: 28,
+              height: 28,
+              border: "none",
+              background: "transparent",
+              marginRight: 10,
+              cursor: "pointer",
+              borderRadius: 6,
+            }}
+          />
+        </Tooltip>
+        <Tooltip title="Adjust opacity" arrow>
+          <IconButton
+            size="small"
+            sx={{ color: "white", mr: 1 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenOpacity(category.id, e);
+            }}
+          >
+            <Box
+              sx={{
+                width: 16,
+                height: 16,
+                borderRadius: "50%",
+                background: `linear-gradient(90deg, rgba(255,255,255,0.15), rgba(255,255,255,0.6))`,
+                border: "1px solid rgba(255,255,255,0.4)",
+              }}
+            />
+          </IconButton>
+        </Tooltip>
+        <Popover
+          open={Boolean(anchor)}
+          anchorEl={anchor}
+          onClose={() => handleCloseOpacity(category.id)}
+          anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+          transformOrigin={{ vertical: "top", horizontal: "left" }}
+          PaperProps={{
+            sx: {
+              p: 2,
+              backgroundColor: "#0f1624",
+              border: "1px solid #1f2a3d",
+              borderRadius: 2,
+              boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+            },
+          }}
+        >
+          <Typography variant="body2" sx={{ mb: 1.5, color: "white", fontWeight: 600 }}>
+            Opacity
+          </Typography>
           <Slider
             size="small"
             min={0}
             max={1}
             step={0.05}
-            value={alpha}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(_, value) =>
-              onColorChange(category.id, rgbaFrom(hex, value as number))
-            }
+            value={alphaValue}
+            onChange={(_, value) => {
+              setLocalAlpha((prev) => ({ ...prev, [category.id]: value as number }));
+            }}
+            onChangeCommitted={(_, value) => {
+              onColorChange(category.id, rgbaFrom(hex, value as number));
+            }}
+            sx={{ width: 180 }}
           />
-        </Box>
-        <ListItemText primary={category.name} primaryTypographyProps={{ color: "white" }} />
+        </Popover>
+        <ListItemText
+          primary={category.name}
+          primaryTypographyProps={{ color: "white", fontWeight: 800, fontSize: "1rem" }}
+        />
         <IconButton
           onClick={(e) => {
             e.stopPropagation();
@@ -121,9 +213,20 @@ function MaskCategoryPanel({
   };
 
   return (
-    <Box sx={{ width: 260, p: 2, borderRight: "1px solid #333", height: "100%", boxSizing: "border-box", backgroundColor: "#1e1e1e", color: "white" }}>
+    <Box
+      sx={{
+        width: 260,
+        p: 2.5,
+        borderRight: "1px solid #1f2a3d",
+        height: "100%",
+        boxSizing: "border-box",
+        backgroundColor: "#0f1624",
+        color: "white",
+        boxShadow: "inset -1px 0 0 rgba(255,255,255,0.04)",
+      }}
+    >
       <Typography variant="h6" sx={{ mb: 1, color: "white" }}>Mask Categories</Typography>
-      <List dense sx={{ maxHeight: "60vh", overflowY: "auto" }}>
+      <List dense sx={{ maxHeight: "60vh", overflowY: "auto", pr: 1 }}>
         {categories.map((category) => renderCategory(category))}
       </List>
       <TextField
@@ -137,12 +240,23 @@ function MaskCategoryPanel({
       />
       <Box display="flex" alignItems="center" mt={1} mb={1}>
         <Typography variant="body2" sx={{ mr: 1, color: "white" }}>Color</Typography>
-        <Input
-          type="color"
-          value={newColor}
-          onChange={(e) => setNewColor(e.target.value)}
-          inputProps={{ style: { padding: 0, width: 40, height: 30 } }}
-        />
+        <Tooltip title="New category color" arrow>
+          <Input
+            type="color"
+            value={newColor}
+            onChange={(e) => setNewColor(e.target.value)}
+            inputProps={{ style: { padding: 0, width: 28, height: 28, borderRadius: 6 } }}
+            sx={{
+              width: 36,
+              height: 32,
+              "& input": {
+                padding: 0,
+                width: 28,
+                height: 28,
+              },
+            }}
+          />
+        </Tooltip>
         <Box sx={{ flexGrow: 1, ml: 1 }}>
           <Slider
             size="small"

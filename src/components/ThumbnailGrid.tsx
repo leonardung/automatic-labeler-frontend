@@ -25,6 +25,8 @@ const ThumbnailGrid: React.FC<ThumbnailGridProps> = ({
         gap: 1,
         px: 1,
         boxSizing: "border-box",
+        backgroundColor: "#0f1624",
+        borderTop: "1px solid #1f2a3d",
       }}
     >
       {images.map((image, index) => {
