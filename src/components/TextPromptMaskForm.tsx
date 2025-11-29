@@ -1,34 +1,12 @@
-import React, { useMemo, useState } from "react";
-import {
-  Box,
-  Button,
-  Chip,
-  InputAdornment,
-  Slider,
-  Stack,
-  TextField,
-  Tooltip,
-  Typography,
-} from "@mui/material";
+import React, { useState } from "react";
+import { Box, Button, InputAdornment, TextField, Tooltip, Typography } from "@mui/material";
 import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
-import LightbulbIcon from "@mui/icons-material/Lightbulb";
 
 interface TextPromptMaskFormProps {
   disabled?: boolean;
   loading?: boolean;
-  onSubmit: (prompt: string, maxMasks: number) => void;
+  onSubmit: (prompt: string, maxMasks: number, threshold: number) => void;
 }
-
-const suggestionPool = [
-  "car",
-  "person",
-  "tree line",
-  "road",
-  "building",
-  "sky reflection",
-  "window lights",
-  "license plate",
-];
 
 const TextPromptMaskForm: React.FC<TextPromptMaskFormProps> = ({
   disabled,
@@ -36,36 +14,27 @@ const TextPromptMaskForm: React.FC<TextPromptMaskFormProps> = ({
   onSubmit,
 }) => {
   const [prompt, setPrompt] = useState("");
-  const [maxMasks, setMaxMasks] = useState(2);
-
-  const chips = useMemo(
-    () => [...suggestionPool].sort(() => 0.5 - Math.random()).slice(0, 4),
-    []
-  );
+  const [maxMasks, setMaxMasks] = useState(10);
+  const [threshold, setThreshold] = useState(0.5);
 
   const handleSubmit = () => {
     const clean = prompt.trim();
     if (!clean) return;
-    onSubmit(clean, maxMasks);
+    const safeMax = Math.min(99, Math.max(1, Math.round(maxMasks || 10)));
+    const safeThreshold = Math.min(1, Math.max(0.01, Number(threshold) || 0.5));
+    onSubmit(clean, safeMax, safeThreshold);
   };
 
   return (
     <Box
       sx={{
-        width: 260,
-        p: 2,
-        background: "linear-gradient(180deg, rgba(12,19,35,0.95), rgba(10,14,26,0.9))",
-        border: "1px solid rgba(255,255,255,0.06)",
-        borderRadius: 2,
-        boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+        width: "100%",
+        p: 1.5,
       }}
     >
-      <Box display="flex" alignItems="center" gap={1} mb={1}>
-        <Typography variant="subtitle1" sx={{ color: "white", fontWeight: 700 }}>
-          Text → Mask
-        </Typography>
-        <LightbulbIcon sx={{ color: "#f9d65c" }} fontSize="small" />
-      </Box>
+      <Typography variant="subtitle1" sx={{ color: "white", fontWeight: 700, mb: 0.5 }}>
+        Text → Mask
+      </Typography>
       <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.75)", mb: 1 }}>
         Describe what you want segmented. We will create categories named &lt;prompt&gt;_&lt;id&gt;.
       </Typography>
@@ -96,37 +65,44 @@ const TextPromptMaskForm: React.FC<TextPromptMaskFormProps> = ({
         }}
         InputLabelProps={{ style: { color: "rgba(255,255,255,0.6)" } }}
       />
-      <Box mt={1} mb={1.5}>
-        <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.6)" }}>
-          Max masks to create
-        </Typography>
-        <Slider
+      <Box display="flex" gap={1} mt={1.5} mb={1}>
+        <TextField
+          label="Max masks"
+          type="number"
           size="small"
-          min={1}
-          max={5}
-          step={1}
+          fullWidth
           value={maxMasks}
           disabled={disabled || loading}
-          onChange={(_, value) => setMaxMasks(value as number)}
-          sx={{ mt: 0.5 }}
+          onChange={(e) => setMaxMasks(Number(e.target.value) || 0)}
+          inputProps={{ min: 1, max: 99 }}
+          InputLabelProps={{ style: { color: "rgba(255,255,255,0.6)" } }}
+          InputProps={{
+            sx: {
+              backgroundColor: "rgba(255,255,255,0.05)",
+              color: "white",
+              borderRadius: 1,
+            },
+          }}
+        />
+        <TextField
+          label="Threshold"
+          type="number"
+          size="small"
+          fullWidth
+          value={threshold}
+          disabled={disabled || loading}
+          onChange={(e) => setThreshold(parseFloat(e.target.value) || 0)}
+          inputProps={{ min: 0.01, max: 1, step: 0.05 }}
+          InputLabelProps={{ style: { color: "rgba(255,255,255,0.6)" } }}
+          InputProps={{
+            sx: {
+              backgroundColor: "rgba(255,255,255,0.05)",
+              color: "white",
+              borderRadius: 1,
+            },
+          }}
         />
       </Box>
-      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap mb={1.5}>
-        {chips.map((chip) => (
-          <Chip
-            key={chip}
-            label={chip}
-            size="small"
-            onClick={() => setPrompt(chip)}
-            disabled={disabled || loading}
-            sx={{
-              backgroundColor: "rgba(255,255,255,0.08)",
-              color: "white",
-              "&:hover": { backgroundColor: "rgba(255,255,255,0.14)" },
-            }}
-          />
-        ))}
-      </Stack>
       <Tooltip title="Create masks using the text prompt" arrow>
         <span>
           <Button

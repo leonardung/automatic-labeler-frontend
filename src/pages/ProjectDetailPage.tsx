@@ -345,7 +345,11 @@ function ProjectDetailPage() {
     }
   };
 
-  const handleGenerateFromPrompt = async (promptText: string, maxMasks: number) => {
+  const handleGenerateFromPrompt = async (
+    promptText: string,
+    maxMasks: number,
+    threshold: number
+  ) => {
     if (!projectId || images.length === 0) return;
     const targetImage = images[currentIndex];
     setPromptLoading(true);
@@ -358,6 +362,7 @@ function ProjectDetailPage() {
       }>(`images/${targetImage.id}/generate_text_mask/`, {
         prompt: promptText,
         max_masks: maxMasks,
+        threshold,
       });
 
       const { image: updatedImagePayload, categories: updatedCategories, created_categories } =
@@ -674,12 +679,19 @@ function ProjectDetailPage() {
             <Box
               sx={{
                 flexShrink: 0,
-                width: 280,
+                width: 320,
+                minWidth: 260,
+                maxWidth: "50vw",
+                resize: "horizontal",
+                overflow: "auto",
                 display: "flex",
                 flexDirection: "column",
-                gap: 2,
+                gap: 1,
                 height: "100%",
-                px: 1,
+                p: 2,
+                backgroundColor: "#0f1624",
+                borderRight: "1px solid #1f2a3d",
+                boxShadow: "inset -1px 0 0 rgba(255,255,255,0.04)",
               }}
             >
               <TextPromptMaskForm

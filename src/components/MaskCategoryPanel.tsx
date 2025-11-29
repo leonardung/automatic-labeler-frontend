@@ -224,14 +224,13 @@ function MaskCategoryPanel({
   return (
     <Box
       sx={{
-        width: 260,
-        p: 2.5,
-        borderRight: "1px solid #1f2a3d",
+        width: "100%",
+        p: 2,
+        borderTop: "1px solid #1f2a3d",
         height: "100%",
         boxSizing: "border-box",
-        backgroundColor: "#0f1624",
+        backgroundColor: "transparent",
         color: "white",
-        boxShadow: "inset -1px 0 0 rgba(255,255,255,0.04)",
       }}
     >
       <Typography variant="h6" sx={{ mb: 1, color: "white" }}>Mask Categories</Typography>
@@ -240,12 +239,16 @@ function MaskCategoryPanel({
       </List>
       <TextField
         label="New Category"
+        size="small"
         value={newCategory}
         onChange={(e) => setNewCategory(e.target.value)}
         fullWidth
         margin="dense"
         InputLabelProps={{ style: { color: "white" } }}
-        InputProps={{ style: { color: "white" } }}
+        InputProps={{
+          style: { color: "white" },
+          sx: { backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 1 },
+        }}
       />
       <Box display="flex" alignItems="center" mt={1} mb={1}>
         <Typography variant="body2" sx={{ mr: 1, color: "white" }}>Color</Typography>
