@@ -22,6 +22,7 @@ import NavigationButtons from "../components/NavigationButtons";
 import Controls from "../components/Controls";
 import ThumbnailGrid from "../components/ThumbnailGrid";
 import MaskCategoryPanel from "../components/MaskCategoryPanel";
+import TextPromptMaskForm from "../components/TextPromptMaskForm";
 import { AuthContext } from "../AuthContext";
 import type {
   ImageModel,
@@ -53,6 +54,7 @@ function ProjectDetailPage() {
     message: "",
     severity: "info",
   });
+  const [promptLoading, setPromptLoading] = useState(false);
   const [openSettingsDialog, setOpenSettingsDialog] = useState(false);
   const [maxFrames, setMaxFrames] = useState<number>(500);
   const [stride, setStride] = useState<number>(1);
@@ -343,6 +345,73 @@ function ProjectDetailPage() {
     }
   };
 
+  const handleGenerateFromPrompt = async (promptText: string, maxMasks: number) => {
+    if (!projectId || images.length === 0) return;
+    const targetImage = images[currentIndex];
+    setPromptLoading(true);
+    setLoading(true);
+    try {
+      const response = await axiosInstance.post<{
+        image: ImageModel;
+        categories: MaskCategory[];
+        created_categories?: MaskCategory[];
+      }>(`images/${targetImage.id}/generate_text_mask/`, {
+        prompt: promptText,
+        max_masks: maxMasks,
+      });
+
+      const { image: updatedImagePayload, categories: updatedCategories, created_categories } =
+        response.data;
+
+      const updatedImage = decorateImage(updatedImagePayload);
+      const normalizedCategories = updatedCategories || [];
+
+      setCategories(normalizedCategories);
+      setImages((prev) =>
+        prev.map((img) => (img.id === updatedImage.id ? { ...img, ...updatedImage } : img))
+      );
+      setProject((prev) =>
+        prev
+          ? {
+              ...prev,
+              images: prev.images.map((img) =>
+                img.id === updatedImage.id ? { ...img, ...updatedImage } : img
+              ),
+              categories: normalizedCategories,
+            }
+          : prev
+      );
+
+      const newlyCreatedId = created_categories?.[0]?.id || null;
+      const activeStillExists =
+        activeCategoryId &&
+        normalizedCategories.some((cat) => cat.id === activeCategoryId);
+      const fallbackActive = newlyCreatedId
+        || (activeStillExists ? activeCategoryId : null)
+        || normalizedCategories[0]?.id
+        || null;
+      if (fallbackActive !== null) {
+        setActiveCategoryId(fallbackActive);
+      }
+
+      setNotification({
+        open: true,
+        message: `Created ${created_categories?.length || 1} mask(s) from "${promptText}".`,
+        severity: "success",
+      });
+    } catch (error) {
+      console.error("Error generating text mask:", error);
+      setNotification({
+        open: true,
+        message: "Could not generate masks from prompt.",
+        severity: "error",
+      });
+    } finally {
+      setPromptLoading(false);
+      setLoading(false);
+    }
+  };
+
   const handleImageUpdated = (updatedImage: ImageModel) => {
     const normalized = decorateImage(updatedImage);
     setImages((prev) =>
@@ -602,14 +671,31 @@ function ProjectDetailPage() {
       {images.length > 0 ? (
         <Box display="flex" flexDirection="column" flexGrow={1} height="100%" overflow="hidden">
           <Box display="flex" flexGrow={1} overflow="hidden">
-            <MaskCategoryPanel
-              categories={categories}
-              activeCategoryId={activeCategoryId}
-              onSelectCategory={setActiveCategoryId}
-              onAddCategory={handleAddCategory}
-              onDeleteCategory={handleDeleteCategory}
-              onColorChange={handleColorChange}
-            />
+            <Box
+              sx={{
+                flexShrink: 0,
+                width: 280,
+                display: "flex",
+                flexDirection: "column",
+                gap: 2,
+                height: "100%",
+                px: 1,
+              }}
+            >
+              <TextPromptMaskForm
+                disabled={images.length === 0}
+                loading={promptLoading || loading}
+                onSubmit={handleGenerateFromPrompt}
+              />
+              <MaskCategoryPanel
+                categories={categories}
+                activeCategoryId={activeCategoryId}
+                onSelectCategory={setActiveCategoryId}
+                onAddCategory={handleAddCategory}
+                onDeleteCategory={handleDeleteCategory}
+                onColorChange={handleColorChange}
+              />
+            </Box>
             <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
               <Box display="flex" flexGrow={1} overflow="hidden">
                 <Box flexGrow={1} display="flex" overflow="hidden">
