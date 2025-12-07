@@ -66,6 +66,10 @@ function ProjectDetailPage() {
   const [blockingOps, setBlockingOps] = useState(0);
   const [blockingMessage, setBlockingMessage] = useState("Working...");
   const isBlocked = blockingOps > 0;
+  const [propagationProgress, setPropagationProgress] = useState(0);
+  const [isPropagating, setIsPropagating] = useState(false);
+  const progressIntervalRef = useRef<number | null>(null);
+  const isPollingProgressRef = useRef(false);
 
   const startLoading = useCallback(() => {
     setLoadingCounter((count) => count + 1);
@@ -79,6 +83,52 @@ function ProjectDetailPage() {
     setBlockingMessage(message || "Working...");
     setBlockingOps((count) => count + 1);
   }, []);
+
+  const clearProgressPolling = useCallback(() => {
+    if (progressIntervalRef.current !== null) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+  }, []);
+
+  const pollPropagationProgress = useCallback(async () => {
+    if (!projectId || isPollingProgressRef.current) return;
+    isPollingProgressRef.current = true;
+    try {
+      const response = await axiosInstance.get<{
+        progress?: number;
+        status?: string;
+        detail?: string;
+      }>(`images/propagation_progress/`, { params: { project_id: projectId } });
+      const { progress = 0, status: statusText = "idle", detail } = response.data || {};
+      const normalizedProgress = Math.min(100, Math.max(0, Math.round(progress)));
+      setPropagationProgress(normalizedProgress);
+
+      if (statusText === "failed") {
+        setNotification({
+          open: true,
+          message: detail ? `Propagation failed: ${detail}` : "Propagation failed.",
+          severity: "error",
+        });
+        setIsPropagating(false);
+        clearProgressPolling();
+      } else if (statusText === "completed" || normalizedProgress >= 100) {
+        setIsPropagating(false);
+        clearProgressPolling();
+      }
+    } catch (error) {
+      console.error("Error polling propagation progress:", error);
+    } finally {
+      isPollingProgressRef.current = false;
+    }
+  }, [clearProgressPolling, projectId]);
+
+  const startProgressPolling = useCallback(() => {
+    setPropagationProgress(0);
+    clearProgressPolling();
+    pollPropagationProgress();
+    progressIntervalRef.current = window.setInterval(pollPropagationProgress, 1000);
+  }, [clearProgressPolling, pollPropagationProgress]);
 
   const stopBlocking = useCallback(() => {
     setBlockingOps((count) => Math.max(0, count - 1));
@@ -143,6 +193,10 @@ function ProjectDetailPage() {
   useEffect(() => {
     modelLoadedRef.current = false;
   }, [projectId]);
+
+  useEffect(() => () => {
+    clearProgressPolling();
+  }, [clearProgressPolling]);
 
   useEffect(() => {
     const requiresModel =
@@ -342,6 +396,8 @@ function ProjectDetailPage() {
     }
 
     try {
+      setIsPropagating(true);
+      startProgressPolling();
       startBlocking("Propagating masks through video...");
       startLoading();
       const response = await axiosInstance.post<ImageModel[]>(`images/propagate_mask/`, {
@@ -360,6 +416,7 @@ function ProjectDetailPage() {
         setProject((prev) =>
           prev ? { ...prev, images: updatedImages } : prev
         );
+        setPropagationProgress(100);
       }
     } catch (error) {
       console.error("Error propagating mask:", error);
@@ -369,6 +426,8 @@ function ProjectDetailPage() {
         severity: "error",
       });
     } finally {
+      clearProgressPolling();
+      setIsPropagating(false);
       stopBlocking();
       stopLoading();
     }
@@ -659,6 +718,18 @@ function ProjectDetailPage() {
           <Typography variant="body2" sx={{ opacity: 0.8 }}>
             Please wait...
           </Typography>
+          {isPropagating && (
+            <Box sx={{ width: 260, display: "flex", flexDirection: "column", gap: 1 }}>
+              <LinearProgress
+                variant="determinate"
+                value={propagationProgress}
+                sx={{ width: "100%" }}
+              />
+              <Typography variant="caption" sx={{ textAlign: "center", color: "rgba(255,255,255,0.9)" }}>
+                Propagation {propagationProgress}% complete
+              </Typography>
+            </Box>
+          )}
         </Box>
       )}
       <CssBaseline />
