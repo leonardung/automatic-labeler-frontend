@@ -11,6 +11,9 @@ interface ImageDisplaySegmentationProps {
   onImageUpdated?: (image: ImageModel) => void;
   onPointsUpdated?: (imageId: number, categoryId: number, points: SegmentationPoint[]) => void;
   onRequireCategory?: () => void;
+  disabled?: boolean;
+  onStartBlocking?: (message?: string) => void;
+  onStopBlocking?: () => void;
 }
 
 const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
@@ -20,6 +23,9 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
   onImageUpdated,
   onPointsUpdated,
   onRequireCategory,
+  disabled,
+  onStartBlocking,
+  onStopBlocking,
 }) => {
   const {
     imageRef,
@@ -74,6 +80,7 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
 
   const handleImageClick = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
+    if (disabled) return;
     if (isPanning) return;
     if (!containerRef.current || !imageRef.current) return;
     if (!activeCategory) {
@@ -121,6 +128,7 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
       return;
     }
     try {
+      onStartBlocking?.("Creating mask from points...");
       const response = await axiosInstance.post<ImageModel>(
         `images/${image.id}/generate_mask/`,
         {
@@ -142,6 +150,8 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
       onImageUpdated?.(updatedImage);
     } catch (error) {
       console.error("Error generating mask:", error);
+    } finally {
+      onStopBlocking?.();
     }
   };
 
@@ -257,6 +267,7 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
   };
 
   const clearPoints = async () => {
+    if (disabled) return;
     if (!activeCategory) {
       onRequireCategory?.();
       return;
@@ -303,6 +314,7 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
             <Checkbox
               checked={keepZoomPan}
               onChange={() => handleToggleChange()}
+              disabled={disabled}
               color="primary"
             />
           }
@@ -321,7 +333,7 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
           color: "black",
         }}
       >
-        <Button variant="contained" color="secondary" onClick={clearPoints}>
+        <Button variant="contained" color="secondary" onClick={clearPoints} disabled={disabled}>
           Clear Points
         </Button>
       </Box>
@@ -333,23 +345,26 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
           width: "100%",
           height: "100%",
           overflow: "hidden",
-          cursor: ShiftKeyPress
-            ? isPanning
-              ? "grabbing"
-              : "grab"
-            : "crosshair",
+          cursor: disabled
+            ? "not-allowed"
+            : ShiftKeyPress
+              ? isPanning
+                ? "grabbing"
+                : "grab"
+              : "crosshair",
         }}
-        onWheel={handleWheel}
+        onWheel={disabled ? undefined : handleWheel}
         onMouseDown={(e) => {
+          if (disabled) return;
           if (e.shiftKey) {
             handleMouseDown(e); // Start panning
           } else if (e.button === 0 || e.button === 2) {
             handleImageClick(e); // Process click
           }
         }}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseMove={disabled ? undefined : handleMouseMove}
+        onMouseUp={disabled ? undefined : handleMouseUp}
+        onMouseLeave={disabled ? undefined : handleMouseUp}
         onContextMenu={handleContextMenu} // Prevent default context menu
       >
         <img

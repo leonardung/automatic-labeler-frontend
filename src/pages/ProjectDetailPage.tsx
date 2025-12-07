@@ -14,6 +14,7 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  CircularProgress,
 } from "@mui/material";
 import type { AlertColor } from "@mui/material";
 
@@ -48,7 +49,7 @@ function ProjectDetailPage() {
   const [categories, setCategories] = useState<MaskCategory[]>([]);
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [loadingCounter, setLoadingCounter] = useState(0);
   const [notification, setNotification] = useState<NotificationState>({
     open: false,
     message: "",
@@ -60,14 +61,38 @@ function ProjectDetailPage() {
   const [stride, setStride] = useState<number>(1);
   const modelLoadedRef = useRef(false);
   const projectType: ProjectType = project?.type || "segmentation";
+  const loading = loadingCounter > 0;
+
+  const [blockingOps, setBlockingOps] = useState(0);
+  const [blockingMessage, setBlockingMessage] = useState("Working...");
+  const isBlocked = blockingOps > 0;
+
+  const startLoading = useCallback(() => {
+    setLoadingCounter((count) => count + 1);
+  }, []);
+
+  const stopLoading = useCallback(() => {
+    setLoadingCounter((count) => Math.max(0, count - 1));
+  }, []);
+
+  const startBlocking = useCallback((message?: string) => {
+    setBlockingMessage(message || "Working...");
+    setBlockingOps((count) => count + 1);
+  }, []);
+
+  const stopBlocking = useCallback(() => {
+    setBlockingOps((count) => Math.max(0, count - 1));
+  }, []);
 
   const handleNextImage = useCallback(() => {
+    if (isBlocked) return;
     setCurrentIndex((prevIndex) => Math.min(prevIndex + 1, images.length - 1));
-  }, [images.length]);
+  }, [images.length, isBlocked]);
 
   const handlePrevImage = useCallback(() => {
+    if (isBlocked) return;
     setCurrentIndex((prevIndex) => Math.max(prevIndex - 1, 0));
-  }, []);
+  }, [isBlocked]);
 
   const bustCache = useCallback((url?: string | null): string | null => {
     return url ? `${url.split("?")[0]}?t=${Date.now()}` : null;
@@ -129,6 +154,8 @@ function ProjectDetailPage() {
 
     const loadModel = async () => {
       try {
+        startBlocking("Loading model...");
+        startLoading();
         await axiosInstance.post(`model/load_model/`);
         modelLoadedRef.current = true;
         setNotification({
@@ -143,11 +170,14 @@ function ProjectDetailPage() {
           message: "Error loading model.",
           severity: "error",
         });
+      } finally {
+        stopBlocking();
+        stopLoading();
       }
     };
 
     loadModel();
-  }, [project, projectType, projectId]);
+  }, [project, projectType, projectId, startBlocking, stopBlocking, startLoading, stopLoading]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -159,7 +189,7 @@ function ProjectDetailPage() {
         tagName === "SELECT" ||
         target?.getAttribute("contenteditable") === "true";
 
-      if (isEditable) return;
+      if (isEditable || isBlocked) return;
 
       if (event.key === "a") {
         handlePrevImage();
@@ -172,9 +202,10 @@ function ProjectDetailPage() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handleNextImage, handlePrevImage]);
+  }, [handleNextImage, handlePrevImage, isBlocked]);
 
   const handleSelectFolder = async () => {
+    if (isBlocked) return;
     if (projectType === "video_tracking_segmentation") {
       setOpenSettingsDialog(true);
       return;
@@ -184,6 +215,7 @@ function ProjectDetailPage() {
   };
 
   const handleSettingsSubmit = () => {
+    if (isBlocked) return;
     setOpenSettingsDialog(false);
     selectFiles();
   };
@@ -213,16 +245,16 @@ function ProjectDetailPage() {
       if (images.length === 0) {
         setCurrentIndex(0);
       }
-      setLoading(true);
+      startLoading();
 
-      if (projectType === "video_tracking_segmentation" && filteredFiles.length > 0) {
-        const formData = new FormData();
-        formData.append("project_id", projectId);
-        formData.append("video", filteredFiles[0]);
-        formData.append("max_frames", String(maxFrames));
-        formData.append("stride", String(stride));
+      try {
+        if (projectType === "video_tracking_segmentation" && filteredFiles.length > 0) {
+          const formData = new FormData();
+          formData.append("project_id", projectId);
+          formData.append("video", filteredFiles[0]);
+          formData.append("max_frames", String(maxFrames));
+          formData.append("stride", String(stride));
 
-        try {
           const response = await axiosInstance.post<ImageModel[]>(`video/`, formData, {
             headers: {
               "Content-Type": "multipart/form-data",
@@ -233,62 +265,57 @@ function ProjectDetailPage() {
             const newFrames = response.data.map(decorateImage);
             setImages((prevImages) => [...prevImages, ...newFrames]);
           }
-        } catch (error) {
-          console.error("Error uploading video: ", error);
-          setNotification({
-            open: true,
-            message: "Error uploading video",
-            severity: "error",
-          });
-        } finally {
-          setLoading(false);
+
+          return;
         }
 
-        return;
-      }
+        const batchSize = 50;
+        for (let i = 0; i < filteredFiles.length; i += batchSize) {
+          const batchFiles = filteredFiles.slice(i, i + batchSize);
 
-      const batchSize = 50;
-      for (let i = 0; i < filteredFiles.length; i += batchSize) {
-        const batchFiles = filteredFiles.slice(i, i + batchSize);
+          const formData = new FormData();
+          formData.append("project_id", projectId);
 
-        const formData = new FormData();
-        formData.append("project_id", projectId);
-
-        batchFiles.forEach((file) => {
-          formData.append("images", file);
-        });
-
-        try {
-          const response = await axiosInstance.post<ImageModel[]>(`images/`, formData, {
-            headers: {
-              "Content-Type": "multipart/form-data",
-            },
+          batchFiles.forEach((file) => {
+            formData.append("images", file);
           });
 
-          if (response.data) {
-            const newImages = response.data.map(decorateImage);
-            setImages((prevImages) => [...prevImages, ...newImages]);
+          try {
+            const response = await axiosInstance.post<ImageModel[]>(`images/`, formData, {
+              headers: {
+                "Content-Type": "multipart/form-data",
+              },
+            });
+
+            if (response.data) {
+              const newImages = response.data.map(decorateImage);
+              setImages((prevImages) => [...prevImages, ...newImages]);
+            }
+          } catch (error) {
+            console.error("Error uploading batch: ", error);
+            setNotification({
+              open: true,
+              message: "Error uploading batch",
+              severity: "error",
+            });
           }
-        } catch (error) {
-          console.error("Error uploading batch: ", error);
-          setNotification({
-            open: true,
-            message: "Error uploading batch",
-            severity: "error",
-          });
         }
+      } catch (error) {
+        console.error("Error uploading media:", error);
+      } finally {
+        stopLoading();
       }
-
-      setLoading(false);
     };
 
     input.click();
   };
   const handleThumbnailClick = (index: number) => {
+    if (isBlocked) return;
     setCurrentIndex(index);
   };
 
   const handlePropagateMask = async () => {
+    if (isBlocked) return;
     if (projectType !== "video_tracking_segmentation") {
       setNotification({
         open: true,
@@ -315,7 +342,8 @@ function ProjectDetailPage() {
     }
 
     try {
-      setLoading(true);
+      startBlocking("Propagating masks through video...");
+      startLoading();
       const response = await axiosInstance.post<ImageModel[]>(`images/propagate_mask/`, {
         project_id: projectId,
         category_id: activeCategoryId,
@@ -341,7 +369,8 @@ function ProjectDetailPage() {
         severity: "error",
       });
     } finally {
-      setLoading(false);
+      stopBlocking();
+      stopLoading();
     }
   };
 
@@ -350,10 +379,12 @@ function ProjectDetailPage() {
     maxMasks: number,
     threshold: number
   ) => {
+    if (isBlocked) return;
     if (!projectId || images.length === 0) return;
     const targetImage = images[currentIndex];
     setPromptLoading(true);
-    setLoading(true);
+    startBlocking("Generating masks from text...");
+    startLoading();
     try {
       const response = await axiosInstance.post<{
         image: ImageModel;
@@ -413,7 +444,8 @@ function ProjectDetailPage() {
       });
     } finally {
       setPromptLoading(false);
-      setLoading(false);
+      stopBlocking();
+      stopLoading();
     }
   };
 
@@ -437,6 +469,7 @@ function ProjectDetailPage() {
   };
 
   const handleAddCategory = async (name: string, color: string) => {
+    if (isBlocked) return;
     if (!projectId) return;
     try {
       const response = await axiosInstance.post<MaskCategory>("categories/", {
@@ -458,6 +491,7 @@ function ProjectDetailPage() {
   };
 
   const handleDeleteCategory = async (categoryId: number) => {
+    if (isBlocked) return;
     try {
       await axiosInstance.delete(`categories/${categoryId}/`);
       setCategories((prev) => {
@@ -484,6 +518,7 @@ function ProjectDetailPage() {
   };
 
   const handleColorChange = async (categoryId: number, color: string) => {
+    if (isBlocked) return;
     try {
       const response = await axiosInstance.patch<MaskCategory>(`categories/${categoryId}/`, { color });
       const updated = response.data;
@@ -544,6 +579,7 @@ function ProjectDetailPage() {
   };
 
   const handleClearLabels = async () => {
+    if (isBlocked) return;
     if (!project) return;
     try {
       await axiosInstance.delete(`projects/${project.id}/delete_masks/`);
@@ -595,8 +631,36 @@ function ProjectDetailPage() {
         flexDirection: "column",
         color: "text.primary",
         backgroundColor: "background.default",
+        position: "relative",
       }}
+      aria-busy={isBlocked}
     >
+      {isBlocked && (
+        <Box
+          sx={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 2000,
+            backgroundColor: "rgba(6, 12, 20, 0.65)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 2,
+            color: "white",
+            pointerEvents: "auto",
+          }}
+        >
+          <CircularProgress color="inherit" />
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>
+            {blockingMessage}
+          </Typography>
+          <Typography variant="body2" sx={{ opacity: 0.8 }}>
+            Please wait...
+          </Typography>
+        </Box>
+      )}
       <CssBaseline />
       <Box
         mb={1}
@@ -695,8 +759,8 @@ function ProjectDetailPage() {
               }}
             >
               <TextPromptMaskForm
-                disabled={images.length === 0}
-                loading={promptLoading || loading}
+                disabled={images.length === 0 || isBlocked}
+                loading={promptLoading || loading || isBlocked}
                 onSubmit={handleGenerateFromPrompt}
               />
               <MaskCategoryPanel
@@ -717,6 +781,9 @@ function ProjectDetailPage() {
                     activeCategoryId={activeCategoryId}
                     onImageUpdated={handleImageUpdated}
                     onPointsUpdated={handlePointsUpdated}
+                    disabled={isBlocked}
+                    onStartBlocking={startBlocking}
+                    onStopBlocking={stopBlocking}
                     onRequireCategory={() =>
                       setNotification({
                         open: true,
@@ -738,11 +805,13 @@ function ProjectDetailPage() {
                     onNext={handleNextImage}
                     disablePrev={currentIndex === 0}
                     disableNext={currentIndex === images.length - 1}
+                    disabled={isBlocked}
                   />
                   <Controls
                     projectType={projectType}
                     onPropagate={handlePropagateMask}
                     onClearLabels={handleClearLabels}
+                    disabled={isBlocked}
                   />
                 </Box>
               </Box>
