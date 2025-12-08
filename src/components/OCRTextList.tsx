@@ -179,12 +179,12 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
                 selected={isSelected}
                 sx={{
                   display: "grid",
-                  gridTemplateColumns: "24px minmax(0, 1fr) auto 36px",
+                  gridTemplateColumns: "24px minmax(0, 1fr) auto 24px",
                   alignItems: "center",
                   gap: 0.6,
                   py: 0.7,
                   px: 1.5,
-                  borderLeft: isSelected ? "4px solid #60a5fa" : "4px solid transparent",
+                  borderLeft: isSelected ? "1px solid #60a5fa" : "2px solid transparent",
                   bgcolor: isSelected
                     ? "rgba(96,165,250,0.16)"
                     : matchesActiveCategory
@@ -209,7 +209,7 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
                   value={shape.text}
                   onChange={(e) => handleTextChange(shape.id, e.target.value)}
                   onBlur={() => handleTextBlur(shape.id)}
-                  onClick={(e) => e.stopPropagation()}
+                  onFocus={() => onSelectShape(shape.id)}
                   disabled={disabled}
                   sx={{
                     px: 1,
@@ -228,7 +228,6 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
                 />
                 <Tooltip title={shape.category || "Unlabeled"} arrow>
                   <Box
-                    onClick={(e) => e.stopPropagation()}
                     sx={{ width: "100%", display: "flex", justifyContent: "flex-end" }}
                   >
                     {renderCategoryChip(shape.category)}

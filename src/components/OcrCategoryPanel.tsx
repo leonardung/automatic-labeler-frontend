@@ -9,6 +9,7 @@ import {
   Tooltip,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
+import EditIcon from "@mui/icons-material/Edit";
 import type { MaskCategory } from "../types";
 
 interface OcrCategoryPanelProps {
@@ -18,6 +19,7 @@ interface OcrCategoryPanelProps {
   onAddCategory: (name: string, color: string) => void;
   onDeleteCategory: (categoryId: number) => void;
   onColorChange: (categoryId: number, color: string) => void;
+  onRenameCategory: (categoryId: number, name: string) => void;
   disabled?: boolean;
 }
 
@@ -89,6 +91,7 @@ const OcrCategoryPanel: React.FC<OcrCategoryPanelProps> = ({
   onAddCategory,
   onDeleteCategory,
   onColorChange,
+  onRenameCategory,
   disabled,
 }) => {
   const [name, setName] = useState("");
@@ -113,7 +116,7 @@ const OcrCategoryPanel: React.FC<OcrCategoryPanelProps> = ({
         key={cat.id}
         sx={{
           display: "grid",
-          gridTemplateColumns: "30px 1fr 32px",
+          gridTemplateColumns: "30px 1fr 28px 28px",
           alignItems: "center",
           gap: 0.5,
           px: 0.75,
@@ -159,6 +162,21 @@ const OcrCategoryPanel: React.FC<OcrCategoryPanelProps> = ({
             "&:hover": { opacity: 0.9 },
           }}
         />
+        <Tooltip title="Rename category">
+          <IconButton
+            size="small"
+            onClick={() => {
+              const next = window.prompt("Rename category", cat.name);
+              if (next && next.trim() && next.trim() !== cat.name) {
+                onRenameCategory(cat.id, next.trim());
+              }
+            }}
+            disabled={disabled}
+            sx={{ color: "rgba(255,255,255,0.7)" }}
+          >
+            <EditIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
         <Tooltip title="Delete category">
           <IconButton
             size="small"

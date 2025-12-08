@@ -637,6 +637,50 @@ function ProjectDetailPage() {
       console.error("Error updating color:", error);
     }
   };
+  const handleRenameCategory = async (categoryId: number, name: string) => {
+    if (isBlocked) return;
+    const current = categories.find((c) => c.id === categoryId);
+    const oldName = current?.name;
+    if (!current || !name.trim()) return;
+    try {
+      const response = await axiosInstance.patch<MaskCategory>(`categories/${categoryId}/`, { name });
+      const updated = response.data;
+      setCategories((prev) =>
+        prev.map((c) => (c.id === categoryId ? { ...c, name: updated.name } : c))
+      );
+      setImages((prev) =>
+        prev.map((img) => ({
+          ...img,
+          ocr_annotations: (img.ocr_annotations || []).map((ann) =>
+            oldName && ann.category === oldName ? { ...ann, category: updated.name } : ann
+          ),
+        }))
+      );
+      setProject((prev) =>
+        prev
+          ? {
+              ...prev,
+              images: prev.images.map((img) => ({
+                ...img,
+                ocr_annotations: (img.ocr_annotations || []).map((ann) =>
+                  oldName && ann.category === oldName ? { ...ann, category: updated.name } : ann
+                ),
+              })),
+              categories: prev.categories.map((c) =>
+                c.id === categoryId ? { ...c, name: updated.name } : c
+              ),
+            }
+          : prev
+      );
+    } catch (error) {
+      console.error("Error renaming category:", error);
+      setNotification({
+        open: true,
+        message: "Failed to rename category.",
+        severity: "error",
+      });
+    }
+  };
 
   useEffect(() => {
     setImages((prev) =>
@@ -954,6 +998,7 @@ function ProjectDetailPage() {
                   onAddCategory={handleAddCategory}
                   onDeleteCategory={handleDeleteCategory}
                   onColorChange={handleColorChange}
+                  onRenameCategory={handleRenameCategory}
                   disabled={isBlocked}
                 />
                 {currentImage && (
