@@ -53,6 +53,46 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
 
   const svgRef = useRef<SVGSVGElement | null>(null);
 
+  const adjustRectPoints = (shape: OCRAnnotation, newCornerIndex: number, x: number, y: number) => {
+    const oppositeIndex = (newCornerIndex + 2) % 4;
+    const opposite = shape.points[oppositeIndex] || { x, y };
+
+    const leftX = Math.min(x, opposite.x);
+    const rightX = Math.max(x, opposite.x);
+    const topY = Math.min(y, opposite.y);
+    const bottomY = Math.max(y, opposite.y);
+
+    const draggedIsLeft = x <= opposite.x;
+    const draggedIsTop = y <= opposite.y;
+
+    const corners = {
+      tl: { x: leftX, y: topY },
+      tr: { x: rightX, y: topY },
+      br: { x: rightX, y: bottomY },
+      bl: { x: leftX, y: bottomY },
+    };
+
+    const rolesOrder = ["tl", "tr", "br", "bl"] as const;
+    const draggedRole = draggedIsLeft ? (draggedIsTop ? "tl" : "bl") : draggedIsTop ? "tr" : "br";
+    const oppositeRole =
+      draggedRole === "tl" ? "br" : draggedRole === "tr" ? "bl" : draggedRole === "br" ? "tl" : "tr";
+    const remainingRoles = rolesOrder.filter((r) => r !== draggedRole && r !== oppositeRole);
+
+    const roleAssignments: (typeof rolesOrder[number])[] = new Array(4);
+    roleAssignments[newCornerIndex] = draggedRole;
+    roleAssignments[oppositeIndex] = oppositeRole;
+
+    let remIdx = 0;
+    for (let i = 0; i < 4; i += 1) {
+      if (!roleAssignments[i]) {
+        roleAssignments[i] = remainingRoles[remIdx];
+        remIdx += 1;
+      }
+    }
+
+    return roleAssignments.map((role) => corners[role]);
+  };
+
   const screenToImage = (clientX: number, clientY: number) => {
     if (!containerRef.current) return { x: 0, y: 0 };
     const rect = containerRef.current.getBoundingClientRect();
@@ -161,8 +201,10 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     if (draggedPointIndex !== null && selectedShapeId) {
       const shape = image.ocr_annotations?.find((s) => s.id === selectedShapeId);
       if (shape) {
-        const newPoints = [...shape.points];
-        newPoints[draggedPointIndex] = { x, y };
+        const newPoints =
+          shape.type === "rect"
+            ? adjustRectPoints(shape as OCRAnnotation, draggedPointIndex, x, y)
+            : shape.points.map((p, idx) => (idx === draggedPointIndex ? { x, y } : p));
         updateLocalShape(selectedShapeId, { points: newPoints });
         setDidMove(true);
       }
