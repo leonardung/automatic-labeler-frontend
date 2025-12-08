@@ -1,38 +1,77 @@
-import React from "react";
+import React, { useMemo } from "react";
 import {
   Box,
   Typography,
   List,
   ListItemButton,
-  TextField,
   IconButton,
   Paper,
   Divider,
+  InputBase,
+  Chip,
+  Tooltip,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
-import type { ImageModel, OCRAnnotation, ProjectType } from "../types";
+import type { ImageModel, OCRAnnotation, MaskCategory } from "../types";
 import axiosInstance from "../axiosInstance";
 
 interface OCRTextListProps {
   image: ImageModel;
-  projectType: ProjectType;
+  categories: MaskCategory[];
   selectedShapeId: string | null;
+  activeCategoryId: number | null;
   onSelectShape: (id: string | null) => void;
   onImageUpdated: (image: ImageModel) => void;
   disabled?: boolean;
   endpointBase: string;
 }
 
+const getRgbFromColor = (color: string) => {
+  if (color.startsWith("#")) {
+    const hex = color.replace("#", "");
+    const bigint = parseInt(hex.length === 3 ? hex.repeat(2) : hex, 16);
+    const r = (bigint >> 16) & 255;
+    const g = (bigint >> 8) & 255;
+    const b = bigint & 255;
+    return { r, g, b };
+  }
+  if (color.startsWith("rgba") || color.startsWith("rgb")) {
+    const [r, g, b] = color
+      .replace(/[rgba()]/g, "")
+      .split(",")
+      .map((v) => parseInt(v.trim(), 10))
+      .filter((v) => !Number.isNaN(v));
+    return { r: r || 0, g: g || 0, b: b || 0 };
+  }
+  return { r: 0, g: 0, b: 0 };
+};
+
+const readableTextColor = (bg: string) => {
+  const { r, g, b } = getRgbFromColor(bg);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.6 ? "#111826" : "#ffffff";
+};
+
 const OCRTextList: React.FC<OCRTextListProps> = ({
   image,
-  projectType,
+  categories,
   selectedShapeId,
+  activeCategoryId,
   onSelectShape,
   onImageUpdated,
   disabled,
   endpointBase,
 }) => {
   const annotations = image.ocr_annotations || [];
+
+  const categoryMap = useMemo(
+    () =>
+      categories.reduce<Record<string, MaskCategory>>((acc, cat) => {
+        acc[cat.name] = cat;
+        return acc;
+      }, {}),
+    [categories]
+  );
 
   const handleTextChange = (id: string, newText: string) => {
     const shape = annotations.find((s) => s.id === id);
@@ -41,19 +80,6 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
   };
 
   const handleTextBlur = async (id: string) => {
-    const shape = annotations.find((s) => s.id === id);
-    if (shape) {
-      await saveShape(shape);
-    }
-  };
-
-  const handleCategoryChange = (id: string, newCategory: string) => {
-    const shape = annotations.find((s) => s.id === id);
-    if (!shape) return;
-    updateLocal({ ...shape, category: newCategory });
-  };
-
-  const handleCategoryBlur = async (id: string) => {
     const shape = annotations.find((s) => s.id === id);
     if (shape) {
       await saveShape(shape);
@@ -71,7 +97,7 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
         shapes: [shape],
       });
     } catch (error) {
-      console.error("Error saving shape text/category:", error);
+      console.error("Error saving shape text:", error);
     }
   };
 
@@ -91,6 +117,26 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
     }
   };
 
+  const renderCategoryChip = (categoryName: string | null) => {
+    const category = categoryName ? categoryMap[categoryName] : null;
+    const bg = category?.color || "rgba(255,255,255,0.08)";
+    const textColor = category ? readableTextColor(bg) : "#cfd6e4";
+    const label = category?.name || "Unlabeled";
+    return (
+      <Chip
+        label={label}
+        size="small"
+        sx={{
+          bgcolor: bg,
+          color: textColor,
+          fontWeight: 700,
+          height: 26,
+          border: category ? "none" : "1px solid rgba(255,255,255,0.16)",
+        }}
+      />
+    );
+  };
+
   return (
     <Paper
       elevation={3}
@@ -98,13 +144,16 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
         height: "100%",
         display: "flex",
         flexDirection: "column",
-        bgcolor: "background.paper",
+        bgcolor: "#0b1220",
+        border: "1px solid #1f2a3d",
         overflow: "hidden",
       }}
     >
-      <Box p={2} borderBottom={1} borderColor="divider">
-        <Typography variant="h6">Recognized Text</Typography>
-        <Typography variant="caption" color="text.secondary">
+      <Box px={2} py={1.5} borderBottom={1} borderColor="#1f2a3d">
+        <Typography variant="h6" sx={{ color: "white", fontWeight: 800 }}>
+          Recognized Text
+        </Typography>
+        <Typography variant="caption" color="rgba(255,255,255,0.7)">
           {annotations.length} regions
         </Typography>
       </Box>
@@ -113,65 +162,86 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
         {annotations.map((shape, index) => {
           const isSelected = shape.id === selectedShapeId;
           const shapeType = (shape as any).type || (shape as any).shape_type || "";
+          const matchesActiveCategory =
+            activeCategoryId !== null &&
+            categories.find((c) => c.id === activeCategoryId)?.name === shape.category;
+
           return (
             <React.Fragment key={shape.id}>
               <ListItemButton
-                alignItems="flex-start"
-                selected={isSelected}
                 onClick={() => onSelectShape(shape.id)}
+                selected={isSelected}
                 sx={{
-                  flexDirection: "column",
-                  alignItems: "stretch",
-                  borderLeft: isSelected ? "4px solid #1976d2" : "4px solid transparent",
-                  bgcolor: isSelected ? "action.selected" : "inherit",
+                  display: "grid",
+                  gridTemplateColumns: "72px 1fr auto 42px",
+                  alignItems: "center",
+                  gap: 1,
+                  py: 1,
+                  px: 1.5,
+                  borderLeft: isSelected ? "4px solid #60a5fa" : "4px solid transparent",
+                  bgcolor: isSelected
+                    ? "rgba(96,165,250,0.16)"
+                    : matchesActiveCategory
+                    ? "rgba(90,216,255,0.07)"
+                    : "transparent",
+                  "&:hover": {
+                    bgcolor: "rgba(255,255,255,0.04)",
+                  },
                 }}
               >
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                  <Typography variant="caption" color="text.secondary">
-                    #{index + 1} ({shapeType})
+                <Tooltip title={`ID: ${shape.id}`} placement="top" arrow>
+                  <Typography
+                    variant="caption"
+                    color="rgba(255,255,255,0.8)"
+                    sx={{ fontWeight: 700 }}
+                    noWrap
+                  >
+                    #{index + 1} • {shapeType}
                   </Typography>
-                  <IconButton size="small" onClick={(e) => handleDelete(e, shape.id)} disabled={disabled}>
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-
-                <TextField
-                  label="Text"
-                  fullWidth
-                  size="small"
-                  multiline
-                  maxRows={3}
+                </Tooltip>
+                <InputBase
                   value={shape.text}
                   onChange={(e) => handleTextChange(shape.id, e.target.value)}
                   onBlur={() => handleTextBlur(shape.id)}
                   onClick={(e) => e.stopPropagation()}
                   disabled={disabled}
-                  variant="outlined"
-                  margin="dense"
+                  sx={{
+                    px: 1,
+                    py: 0.6,
+                    borderRadius: 1,
+                    backgroundColor: "rgba(255,255,255,0.04)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    color: "white",
+                    fontSize: 13,
+                    "& .MuiInputBase-input": {
+                      textOverflow: "ellipsis",
+                    },
+                  }}
+                  fullWidth
+                  inputProps={{ "aria-label": "recognized text" }}
                 />
-
-                {projectType === "ocr_kie" && (
-                  <TextField
-                    label="Category"
-                    fullWidth
-                    size="small"
-                    value={shape.category || ""}
-                    onChange={(e) => handleCategoryChange(shape.id, e.target.value)}
-                    onBlur={() => handleCategoryBlur(shape.id)}
-                    onClick={(e) => e.stopPropagation()}
-                    disabled={disabled}
-                    variant="outlined"
-                    margin="dense"
-                  />
-                )}
+                <Tooltip title={shape.category || "Unlabeled"} arrow>
+                  <Box onClick={(e) => e.stopPropagation()}>{renderCategoryChip(shape.category)}</Box>
+                </Tooltip>
+                <IconButton
+                  size="small"
+                  onClick={(e) => handleDelete(e, shape.id)}
+                  disabled={disabled}
+                  sx={{
+                    color: "rgba(255,255,255,0.7)",
+                    "&:hover": { color: "#ff6b6b", backgroundColor: "rgba(255,107,107,0.1)" },
+                  }}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
               </ListItemButton>
-              <Divider component="li" />
+              <Divider component="li" sx={{ borderColor: "#1f2a3d" }} />
             </React.Fragment>
           );
         })}
         {annotations.length === 0 && (
           <Box p={2} textAlign="center">
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="rgba(255,255,255,0.7)">
               No regions detected.
             </Typography>
           </Box>

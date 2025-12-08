@@ -29,6 +29,7 @@ import MaskCategoryPanel from "../components/MaskCategoryPanel";
 import TextPromptMaskForm from "../components/TextPromptMaskForm";
 import OCRControls from "../components/OCRControls";
 import OCRTextList from "../components/OCRTextList";
+import OcrCategoryPanel from "../components/OcrCategoryPanel";
 import { AuthContext } from "../AuthContext";
 import type {
   ImageModel,
@@ -169,9 +170,13 @@ function ProjectDetailPage() {
   }, [isBlocked]);
 
   const handleSelectCategory = (categoryId: number) => {
+    if (isBlocked) return;
     setActiveCategoryId(categoryId);
     setHighlightCategoryId(categoryId);
     setHighlightSignal((prev) => prev + 1);
+    if (isOCRProject) {
+      applyCategoryToSelection(categoryId);
+    }
   };
 
   const bustCache = useCallback((url?: string | null): string | null => {
@@ -644,6 +649,34 @@ function ProjectDetailPage() {
       }))
     );
   }, [categories]);
+  const applyCategoryToSelection = async (categoryId: number) => {
+    if (!isOCRProject || !currentImage || !selectedShapeId) return;
+    const category = categories.find((c) => c.id === categoryId);
+    if (!category) return;
+    const targetAnnotation = currentImage.ocr_annotations?.find((s) => s.id === selectedShapeId);
+    if (!targetAnnotation) return;
+
+    const updatedShape = { ...targetAnnotation, category: category.name };
+    const updatedImage: ImageModel = {
+      ...currentImage,
+      ocr_annotations: (currentImage.ocr_annotations || []).map((s) =>
+        s.id === updatedShape.id ? updatedShape : s
+      ),
+    };
+    handleImageUpdated(updatedImage);
+    try {
+      await axiosInstance.post(`${imageEndpointBase}/${currentImage.id}/ocr_annotations/`, {
+        shapes: [updatedShape],
+      });
+    } catch (error) {
+      console.error("Error applying category to annotation:", error);
+      setNotification({
+        open: true,
+        message: "Failed to update category.",
+        severity: "error",
+      });
+    }
+  };
 
   const handlePointsUpdated = (imageId: number, categoryId: number, points: SegmentationPoint[]) => {
     setImages((prev) =>
@@ -914,16 +947,28 @@ function ProjectDetailPage() {
                     disabled={isBlocked}
                   />
                 )}
+                <OcrCategoryPanel
+                  categories={categories}
+                  activeCategoryId={activeCategoryId}
+                  onSelectCategory={handleSelectCategory}
+                  onAddCategory={handleAddCategory}
+                  onDeleteCategory={handleDeleteCategory}
+                  onColorChange={handleColorChange}
+                  disabled={isBlocked}
+                />
                 {currentImage && (
-                  <OCRTextList
-                    image={currentImage}
-                    projectType={projectType}
-                    selectedShapeId={selectedShapeId}
-                    onSelectShape={setSelectedShapeId}
-                    onImageUpdated={handleImageUpdated}
-                    disabled={isBlocked}
-                    endpointBase={imageEndpointBase}
-                  />
+                  <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                    <OCRTextList
+                      image={currentImage}
+                      categories={categories}
+                      activeCategoryId={activeCategoryId}
+                      selectedShapeId={selectedShapeId}
+                      onSelectShape={setSelectedShapeId}
+                      onImageUpdated={handleImageUpdated}
+                      disabled={isBlocked}
+                      endpointBase={imageEndpointBase}
+                    />
+                  </Box>
                 )}
               </Box>
               <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
