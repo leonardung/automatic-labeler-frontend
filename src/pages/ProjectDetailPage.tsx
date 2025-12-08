@@ -1042,6 +1042,7 @@ function ProjectDetailPage() {
                       <ImageDisplayOCR
                         image={currentImage}
                         activeTool={ocrTool}
+                        categories={categories}
                         selectedShapeIds={selectedShapeIds}
                         onSelectShapes={setSelectedShapeIds}
                         onImageUpdated={handleImageUpdated}

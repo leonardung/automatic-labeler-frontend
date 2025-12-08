@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Box, Typography } from "@mui/material";
 import useImageDisplay from "./useImageDisplay";
-import type { ImageModel, OCRAnnotation } from "../types";
+import type { ImageModel, OCRAnnotation, MaskCategory } from "../types";
 import axiosInstance from "../axiosInstance";
 
 type OCRTool = "rect" | "polygon" | "select";
@@ -12,6 +12,7 @@ interface ImageDisplayOCRProps {
   disabled?: boolean;
   activeTool: OCRTool;
   endpointBase: string;
+  categories: MaskCategory[];
   selectedShapeIds: string[];
   onSelectShapes: (ids: string[]) => void;
   onStartBlocking?: (message?: string) => void;
@@ -28,6 +29,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   onStartBlocking,
   onStopBlocking,
   endpointBase,
+  categories,
 }) => {
   const {
     imageRef,
@@ -65,6 +67,39 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   const primarySelectedId = selectedShapeIds[0] || null;
+  const categoryColorMap = useRef<Record<string, string>>({});
+
+  useEffect(() => {
+    const next: Record<string, string> = {};
+    categories.forEach((c) => {
+      next[c.name] = c.color;
+    });
+    categoryColorMap.current = next;
+  }, [categories]);
+
+  const parseColor = (color?: string) => {
+    if (!color) return { r: 128, g: 135, b: 148, a: 1 };
+    if (color.startsWith("#")) {
+      const hex = color.slice(1);
+      const val = parseInt(hex.length === 3 ? hex.repeat(2) : hex, 16);
+      const r = (val >> 16) & 255;
+      const g = (val >> 8) & 255;
+      const b = val & 255;
+      return { r, g, b, a: 1 };
+    }
+    const match = color.match(/rgba?\(([^)]+)\)/i);
+    if (match) {
+      const parts = match[1].split(",").map((p) => p.trim());
+      const [r, g, b, a] = parts.map((v) => Number(v));
+      return { r: r || 0, g: g || 0, b: b || 0, a: a ?? 1 };
+    }
+    return { r: 128, g: 135, b: 148, a: 1 };
+  };
+
+  const withAlpha = (color?: string, alpha = 0.25) => {
+    const { r, g, b } = parseColor(color);
+    return `rgba(${r},${g},${b},${alpha})`;
+  };
 
   const adjustRectPoints = (shape: OCRAnnotation, newCornerIndex: number, x: number, y: number) => {
     const oppositeIndex = (newCornerIndex + 2) % 4;
@@ -417,12 +452,21 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
           {image.ocr_annotations?.map((shape) => {
             const isSelected = selectedShapeIds.includes(shape.id);
             const pointsStr = shape.points.map((p) => `${p.x},${p.y}`).join(" ");
+            const rawColor = categoryColorMap.current[shape.category || ""] || null;
+            const hasCategory = Boolean(rawColor);
+            const baseColor = hasCategory && rawColor ? rawColor : undefined;
+            const fillColor = isSelected
+              ? "rgba(0,255,0,0.50)"
+              : withAlpha(baseColor, 0.22);
+            const strokeColor = isSelected
+              ? "rgba(0,128,0,0.85)"
+              : withAlpha(baseColor, 0.7);
             return (
               <g key={shape.id} style={{ pointerEvents: "all" }}>
                 <polygon
                   points={pointsStr}
-                  fill={isSelected ? "rgba(0, 255, 0, 0.2)" : "rgba(0, 0, 255, 0.1)"}
-                  stroke={isSelected ? "green" : "blue"}
+                  fill={fillColor}
+                  stroke={strokeColor}
                   strokeWidth={2 / zoomLevel}
                   onMouseDown={(e) => {
                     if (activeTool === "select") {
