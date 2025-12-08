@@ -9,7 +9,6 @@ import {
   TextField,
   Typography,
   Box,
-  Input,
   Slider,
   Tooltip,
 } from "@mui/material";
@@ -68,6 +67,7 @@ interface MaskCategoryPanelProps {
   onSelectCategory: (categoryId: number) => void;
   onDeleteCategory: (categoryId: number) => void;
   onColorChange: (categoryId: number, color: string) => void;
+  disabled?: boolean;
 }
 
 function MaskCategoryPanel({
@@ -77,6 +77,7 @@ function MaskCategoryPanel({
   onSelectCategory,
   onDeleteCategory,
   onColorChange,
+  disabled,
 }: MaskCategoryPanelProps) {
   const [newCategory, setNewCategory] = useState("");
   const [newColor, setNewColor] = useState("#00c800");
@@ -244,6 +245,7 @@ function MaskCategoryPanel({
         onChange={(e) => setNewCategory(e.target.value)}
         fullWidth
         margin="dense"
+        disabled={disabled}
         InputLabelProps={{ style: { color: "white" } }}
         InputProps={{
           style: { color: "white" },
@@ -258,7 +260,8 @@ function MaskCategoryPanel({
             type="color"
             value={newColor}
             onChange={(e) => setNewColor(e.target.value)}
-            style={{ ...colorSwatchStyle, marginRight: 5 }}
+            disabled={disabled}
+            style={{ ...colorSwatchStyle, marginRight: 5, opacity: disabled ? 0.5 : 1 }}
           />
         </Tooltip>
         <Box sx={{ flexGrow: 1, ml: 1 }}>
@@ -269,10 +272,11 @@ function MaskCategoryPanel({
             step={0.05}
             value={newOpacity}
             onChange={(_, value) => setNewOpacity(value as number)}
+            disabled={disabled}
           />
         </Box>
       </Box>
-      <Button variant="contained" fullWidth onClick={handleAdd}>
+      <Button variant="contained" fullWidth onClick={handleAdd} disabled={disabled}>
         Add Category
       </Button>
     </Box>

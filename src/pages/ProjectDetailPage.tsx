@@ -15,14 +15,22 @@ import {
   DialogActions,
   TextField,
   CircularProgress,
+  ToggleButton,
+  ToggleButtonGroup,
 } from "@mui/material";
 import type { AlertColor } from "@mui/material";
+import CropSquareIcon from "@mui/icons-material/CropSquare";
+import PolylineIcon from "@mui/icons-material/Polyline";
+import NearMeIcon from "@mui/icons-material/NearMe";
 
 import ImageDisplaySegmentation from "../components/ImageDisplaySegmentation";
+import ImageDisplayOCR from "../components/ImageDisplayOCR";
 import NavigationButtons from "../components/NavigationButtons";
 import Controls from "../components/Controls";
+import OCRControls from "../components/OCRControls";
 import ThumbnailGrid from "../components/ThumbnailGrid";
 import MaskCategoryPanel from "../components/MaskCategoryPanel";
+import OCRTextList from "../components/OCRTextList";
 import TextPromptMaskForm from "../components/TextPromptMaskForm";
 import { AuthContext } from "../AuthContext";
 import type {
@@ -72,6 +80,10 @@ function ProjectDetailPage() {
   const [isPropagating, setIsPropagating] = useState(false);
   const progressIntervalRef = useRef<number | null>(null);
   const isPollingProgressRef = useRef(false);
+
+  // OCR State
+  const [ocrTool, setOcrTool] = useState<"rect" | "polygon" | "select">("select");
+  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
 
   const startLoading = useCallback(() => {
     setLoadingCounter((count) => count + 1);
@@ -139,11 +151,13 @@ function ProjectDetailPage() {
   const handleNextImage = useCallback(() => {
     if (isBlocked) return;
     setCurrentIndex((prevIndex) => Math.min(prevIndex + 1, images.length - 1));
+    setSelectedShapeId(null);
   }, [images.length, isBlocked]);
 
   const handlePrevImage = useCallback(() => {
     if (isBlocked) return;
     setCurrentIndex((prevIndex) => Math.max(prevIndex - 1, 0));
+    setSelectedShapeId(null);
   }, [isBlocked]);
 
   const handleSelectCategory = (categoryId: number) => {
@@ -375,6 +389,7 @@ function ProjectDetailPage() {
   const handleThumbnailClick = (index: number) => {
     if (isBlocked) return;
     setCurrentIndex(index);
+    setSelectedShapeId(null);
   };
 
   const handlePropagateMask = async () => {
@@ -663,6 +678,7 @@ function ProjectDetailPage() {
       prev.map((img) => ({
         ...img,
         masks: [],
+        ocr_annotations: [],
       }))
     );
     setProject((prev) =>
@@ -672,6 +688,7 @@ function ProjectDetailPage() {
             images: prev.images.map((img) => ({
               ...img,
               masks: [],
+              ocr_annotations: [],
             })),
           }
         : prev
@@ -690,6 +707,8 @@ function ProjectDetailPage() {
   const handleBackToRoot = () => {
     navigate("/");
   };
+
+  const isOcrProject = projectType === "ocr" || projectType === "ocr_kie";
 
   return (
     <Box
@@ -798,51 +817,38 @@ function ProjectDetailPage() {
         </Typography>
 
         <Box sx={{ display: "flex", ml: "auto" }}>
-          <Button
-            variant="contained"
-            color="secondary"
-            onClick={handleBackToRoot}
-            sx={{ mr: 2 }}
-          >
-            Back
+          <Button onClick={handleBackToRoot} color="inherit">
+            Back to Projects
           </Button>
-          <Button
-            variant="contained"
-            color="secondary"
-            onClick={logoutUser}
-            sx={{ mr: 2 }}
-          >
+          <Button onClick={logoutUser} color="error" sx={{ ml: 2 }}>
             Logout
           </Button>
         </Box>
       </Box>
-      {loading && <LinearProgress />}
-      {images.length > 0 ? (
-        <Box display="flex" flexDirection="column" flexGrow={1} height="100%" overflow="hidden">
-          <Box display="flex" flexGrow={1} overflow="hidden">
-            <Box
-              sx={{
-                flexShrink: 0,
-                width: 320,
-                minWidth: 260,
-                maxWidth: "50vw",
-                resize: "horizontal",
-                overflow: "auto",
-                display: "flex",
-                flexDirection: "column",
-                gap: 1,
-                height: "100%",
-                p: 2,
-                backgroundColor: "#0f1624",
-                borderRight: "1px solid #1f2a3d",
-                boxShadow: "inset -1px 0 0 rgba(255,255,255,0.04)",
-              }}
-            >
-              <TextPromptMaskForm
-                disabled={images.length === 0 || isBlocked}
-                loading={promptLoading || loading || isBlocked}
-                onSubmit={handleGenerateFromPrompt}
+
+      <Box display="flex" flexGrow={1} overflow="hidden">
+        {/* Left Side Panel */}
+        <Box
+          sx={{
+            width: 320,
+            minWidth: 320,
+            borderRight: "1px solid #1f2a3d",
+            display: "flex",
+            flexDirection: "column",
+            bgcolor: "background.paper",
+            zIndex: 10,
+          }}
+        >
+          {isOcrProject ? (
+              <OCRTextList
+                  image={images[currentIndex] || ({} as ImageModel)}
+                  projectType={projectType}
+                  selectedShapeId={selectedShapeId}
+                  onSelectShape={setSelectedShapeId}
+                  onImageUpdated={handleImageUpdated}
+                  disabled={isBlocked || images.length === 0}
               />
+          ) : (
               <MaskCategoryPanel
                 categories={categories}
                 activeCategoryId={activeCategoryId}
@@ -850,11 +856,109 @@ function ProjectDetailPage() {
                 onAddCategory={handleAddCategory}
                 onDeleteCategory={handleDeleteCategory}
                 onColorChange={handleColorChange}
+                disabled={isBlocked}
               />
+          )}
+        </Box>
+
+        {/* Main Content Area */}
+        <Box flexGrow={1} display="flex" flexDirection="column" position="relative" bgcolor="#0d1117">
+          {/* Toolbar */}
+          <Box
+            sx={{
+              p: 1,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              borderBottom: "1px solid #1f2a3d",
+              bgcolor: "background.paper",
+            }}
+          >
+            <Box display="flex" gap={2} alignItems="center">
+              <NavigationButtons
+                onPrev={handlePrevImage}
+                onNext={handleNextImage}
+                disablePrev={currentIndex === 0}
+                disableNext={currentIndex === images.length - 1}
+                disabled={isBlocked}
+              />
+              {isOcrProject ? (
+                  <>
+                    <ToggleButtonGroup
+                        value={ocrTool}
+                        exclusive
+                        onChange={(e, newTool) => {
+                            if (newTool) setOcrTool(newTool);
+                        }}
+                        size="small"
+                    >
+                        <ToggleButton value="select" title="Select/Edit">
+                            <NearMeIcon />
+                        </ToggleButton>
+                        <ToggleButton value="rect" title="Rectangle">
+                            <CropSquareIcon />
+                        </ToggleButton>
+                        <ToggleButton value="polygon" title="Polygon">
+                            <PolylineIcon />
+                        </ToggleButton>
+                    </ToggleButtonGroup>
+                    <OCRControls
+                        image={images[currentIndex] || ({} as ImageModel)}
+                        projectType={projectType}
+                        onImageUpdated={handleImageUpdated}
+                        onStartBlocking={startBlocking}
+                        onStopBlocking={stopBlocking}
+                        disabled={isBlocked || images.length === 0}
+                    />
+                  </>
+              ) : (
+                  <Controls
+                    onClearLabels={handleClearLabels}
+                    onPropagate={handlePropagateMask}
+                    disabled={isBlocked}
+                    projectType={projectType}
+                  />
+              )}
             </Box>
-            <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
-              <Box display="flex" flexGrow={1} overflow="hidden">
-                <Box flexGrow={1} display="flex" overflow="hidden">
+            
+            {!isOcrProject && (
+                <Box>
+                  <TextPromptMaskForm
+                    onSubmit={handleGenerateFromPrompt}
+                    loading={promptLoading}
+                    disabled={isBlocked || images.length === 0}
+                  />
+                </Box>
+            )}
+          </Box>
+
+          {/* Image Display Area */}
+          <Box flexGrow={1} position="relative" overflow="hidden">
+            {loading && (
+              <Box
+                position="absolute"
+                top={0}
+                left={0}
+                width="100%"
+                zIndex={10}
+              >
+                <LinearProgress color="secondary" />
+              </Box>
+            )}
+
+            {images.length > 0 ? (
+              isOcrProject ? (
+                  <ImageDisplayOCR
+                    image={images[currentIndex]}
+                    onImageUpdated={handleImageUpdated}
+                    disabled={isBlocked}
+                    activeTool={ocrTool}
+                    selectedShapeId={selectedShapeId}
+                    onSelectShape={setSelectedShapeId}
+                    onStartBlocking={startBlocking}
+                    onStopBlocking={stopBlocking}
+                  />
+              ) : (
                   <ImageDisplaySegmentation
                     image={images[currentIndex]}
                     categories={categories}
@@ -863,63 +967,51 @@ function ProjectDetailPage() {
                     highlightSignal={highlightSignal}
                     onImageUpdated={handleImageUpdated}
                     onPointsUpdated={handlePointsUpdated}
+                    onRequireCategory={() => {
+                      setNotification({
+                        open: true,
+                        message: "Please select or create a category first.",
+                        severity: "warning",
+                      });
+                    }}
                     disabled={isBlocked}
                     onStartBlocking={startBlocking}
                     onStopBlocking={stopBlocking}
-                    onRequireCategory={() =>
-                      setNotification({
-                        open: true,
-                        message: "Create/select a category before adding points.",
-                        severity: "info",
-                      })
-                    }
                   />
-                </Box>
-                <Box
-                  width={80}
-                  display="flex"
-                  flexDirection="column"
-                  justifyContent="center"
-                  alignItems="flex-start"
-                >
-                  <NavigationButtons
-                    onPrev={handlePrevImage}
-                    onNext={handleNextImage}
-                    disablePrev={currentIndex === 0}
-                    disableNext={currentIndex === images.length - 1}
-                    disabled={isBlocked}
-                  />
-                  <Controls
-                    projectType={projectType}
-                    onPropagate={handlePropagateMask}
-                    onClearLabels={handleClearLabels}
-                    disabled={isBlocked}
-                  />
-                </Box>
+              )
+            ) : (
+              <Box
+                display="flex"
+                alignItems="center"
+                justifyContent="center"
+                height="100%"
+                color="text.secondary"
+              >
+                <Typography variant="h6">
+                  No images uploaded. Click "Upload Images" to start.
+                </Typography>
               </Box>
-            </Box>
+            )}
           </Box>
-          <ThumbnailGrid
-            images={images}
-            onThumbnailClick={handleThumbnailClick}
-            currentIndex={currentIndex}
-          />
+
+          {/* Thumbnails */}
+          <Box sx={{ height: 100, borderTop: "1px solid #1f2a3d", bgcolor: "background.paper" }}>
+            <ThumbnailGrid
+              images={images}
+              currentIndex={currentIndex}
+              onThumbnailClick={handleThumbnailClick}
+            />
+          </Box>
         </Box>
-      ) : (
-        <Typography variant="body1" color="text.secondary" align="center">
-          No images loaded. Please upload images.
-        </Typography>
-      )}
+      </Box>
+
       <Snackbar
         open={notification.open}
         autoHideDuration={6000}
         onClose={handleNotificationClose}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
-        <Alert
-          onClose={handleNotificationClose}
-          severity={notification.severity}
-          sx={{ width: "100%" }}
-        >
+        <Alert onClose={handleNotificationClose} severity={notification.severity} sx={{ width: "100%" }}>
           {notification.message}
         </Alert>
       </Snackbar>
