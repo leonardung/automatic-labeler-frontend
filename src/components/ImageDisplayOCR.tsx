@@ -49,6 +49,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   const [draggedShapeId, setDraggedShapeId] = useState<string | null>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [didMove, setDidMove] = useState(false);
+  const [rectPreviewPoint, setRectPreviewPoint] = useState<{ x: number; y: number } | null>(null);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -117,6 +118,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     if (activeTool === "rect") {
       if (currentPoints.length === 0) {
         setCurrentPoints([{ x, y }]);
+        setRectPreviewPoint({ x, y });
       } else {
         const start = currentPoints[0];
         const newShape: Partial<OCRAnnotation> = {
@@ -132,6 +134,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
         };
         saveShape(newShape);
         setCurrentPoints([]);
+        setRectPreviewPoint(null);
       }
     } else if (activeTool === "polygon") {
       setCurrentPoints((prev) => [...prev, { x, y }]);
@@ -150,6 +153,10 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     }
 
     const { x, y } = screenToImage(e.clientX, e.clientY);
+
+    if (activeTool === "rect" && currentPoints.length === 1) {
+      setRectPreviewPoint({ x, y });
+    }
 
     if (draggedPointIndex !== null && selectedShapeId) {
       const shape = image.ocr_annotations?.find((s) => s.id === selectedShapeId);
@@ -193,6 +200,9 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     setDraggedShapeId(null);
     setDragStart(null);
     setDidMove(false);
+    if (activeTool !== "rect" || currentPoints.length === 0) {
+      setRectPreviewPoint(null);
+    }
   };
 
   const handleDoubleClick = () => {
@@ -207,6 +217,12 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
       setCurrentPoints([]);
     }
   };
+
+  useEffect(() => {
+    if (activeTool !== "rect") {
+      setRectPreviewPoint(null);
+    }
+  }, [activeTool]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -321,7 +337,17 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
           {currentPoints.length > 0 && (
             <g style={{ pointerEvents: "none" }}>
               {activeTool === "rect" && currentPoints.length === 1 && (
-                <circle cx={currentPoints[0].x} cy={currentPoints[0].y} r={3 / zoomLevel} fill="red" />
+                <>
+                  {rectPreviewPoint && (
+                    <polygon
+                      points={`${currentPoints[0].x},${currentPoints[0].y} ${rectPreviewPoint.x},${currentPoints[0].y} ${rectPreviewPoint.x},${rectPreviewPoint.y} ${currentPoints[0].x},${rectPreviewPoint.y}`}
+                      fill="rgba(255,0,0,0.12)"
+                      stroke="red"
+                      strokeWidth={2 / zoomLevel}
+                    />
+                  )}
+                  <circle cx={currentPoints[0].x} cy={currentPoints[0].y} r={3 / zoomLevel} fill="red" />
+                </>
               )}
               {activeTool === "polygon" && (
                 <>
