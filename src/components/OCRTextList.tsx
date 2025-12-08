@@ -24,6 +24,7 @@ interface OCRTextListProps {
   onImageUpdated: (image: ImageModel) => void;
   disabled?: boolean;
   endpointBase: string;
+  showCategories: boolean;
 }
 
 const getRgbFromColor = (color: string) => {
@@ -61,6 +62,7 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
   onImageUpdated,
   disabled,
   endpointBase,
+  showCategories,
 }) => {
   const annotations = image.ocr_annotations || [];
 
@@ -121,7 +123,7 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
     const category = categoryName ? categoryMap[categoryName] : null;
     const bg = category?.color || "rgba(255,255,255,0.08)";
     const textColor = category ? readableTextColor(bg) : "#cfd6e4";
-    const label = category?.name || "Unlabeled";
+    const label = category?.name || "None";
     return (
       <Chip
         label={label}
@@ -169,6 +171,7 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
         {annotations.map((shape, index) => {
           const isSelected = selectedShapeIds.includes(shape.id);
           const matchesActiveCategory =
+            showCategories &&
             activeCategoryId !== null &&
             categories.find((c) => c.id === activeCategoryId)?.name === shape.category;
 
@@ -190,7 +193,9 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
                 selected={isSelected}
                 sx={{
                   display: "grid",
-                  gridTemplateColumns: "24px minmax(0, 1fr) auto 24px",
+                  gridTemplateColumns: showCategories
+                    ? "24px minmax(0, 1fr) auto 24px"
+                    : "24px minmax(0, 1fr) 24px",
                   alignItems: "center",
                   gap: 0.6,
                   py: 0.7,
@@ -236,13 +241,15 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
                   fullWidth
                   inputProps={{ "aria-label": "recognized text" }}
                 />
-                <Tooltip title={shape.category || "Unlabeled"} arrow>
-                  <Box
-                    sx={{ width: "100%", display: "flex", justifyContent: "flex-end" }}
-                  >
-                    {renderCategoryChip(shape.category)}
-                  </Box>
-                </Tooltip>
+                {showCategories && (
+                  <Tooltip title={shape.category || "None"} arrow>
+                    <Box
+                      sx={{ width: "100%", display: "flex", justifyContent: "flex-end" }}
+                    >
+                      {renderCategoryChip(shape.category)}
+                    </Box>
+                  </Tooltip>
+                )}
                 <IconButton
                   size="small"
                   onClick={(e) => handleDelete(e, shape.id)}

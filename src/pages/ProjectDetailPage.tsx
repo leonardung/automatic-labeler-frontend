@@ -1016,14 +1016,15 @@ function ProjectDetailPage() {
                   <Box sx={{ flexGrow: 1, minHeight: 0 }}>
                       <OCRTextList
                         image={currentImage}
-                        categories={categories}
-                        activeCategoryId={activeCategoryId}
-                        selectedShapeIds={selectedShapeIds}
-                        onSelectShapes={setSelectedShapeIds}
-                        onImageUpdated={handleImageUpdated}
-                        disabled={isBlocked}
-                        endpointBase={imageEndpointBase}
-                      />
+                      categories={categories}
+                      activeCategoryId={activeCategoryId}
+                      selectedShapeIds={selectedShapeIds}
+                      onSelectShapes={setSelectedShapeIds}
+                      onImageUpdated={handleImageUpdated}
+                      disabled={isBlocked}
+                      endpointBase={imageEndpointBase}
+                      showCategories={showOcrCategoryPanel}
+                    />
                   </Box>
                 )}
               </Box>

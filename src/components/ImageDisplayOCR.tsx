@@ -368,6 +368,15 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const isEditable =
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        target?.getAttribute("contenteditable") === "true";
+      if (isEditable) return;
+
       if (e.key === "Escape") {
         clearDraftShape();
         setSelectionStart(null);
