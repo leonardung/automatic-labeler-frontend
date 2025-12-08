@@ -50,6 +50,16 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [didMove, setDidMove] = useState(false);
   const [rectPreviewPoint, setRectPreviewPoint] = useState<{ x: number; y: number } | null>(null);
+  const [polygonPreviewPoint, setPolygonPreviewPoint] = useState<{ x: number; y: number } | null>(null);
+  const clearDraftShape = useCallback(() => {
+    setCurrentPoints([]);
+    setRectPreviewPoint(null);
+    setPolygonPreviewPoint(null);
+    setDraggedPointIndex(null);
+    setDraggedShapeId(null);
+    setDragStart(null);
+    setDidMove(false);
+  }, []);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -197,6 +207,14 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     if (activeTool === "rect" && currentPoints.length === 1) {
       setRectPreviewPoint({ x, y });
     }
+    if (
+      activeTool === "polygon" &&
+      currentPoints.length > 0 &&
+      draggedPointIndex === null &&
+      !draggedShapeId
+    ) {
+      setPolygonPreviewPoint({ x, y });
+    }
 
     if (draggedPointIndex !== null && selectedShapeId) {
       const shape = image.ocr_annotations?.find((s) => s.id === selectedShapeId);
@@ -245,6 +263,9 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     if (activeTool !== "rect" || currentPoints.length === 0) {
       setRectPreviewPoint(null);
     }
+    if (activeTool !== "polygon") {
+      setPolygonPreviewPoint(null);
+    }
   };
 
   const handleDoubleClick = () => {
@@ -257,6 +278,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
       };
       saveShape(newShape);
       setCurrentPoints([]);
+      setPolygonPreviewPoint(null);
     }
   };
 
@@ -264,10 +286,17 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     if (activeTool !== "rect") {
       setRectPreviewPoint(null);
     }
+    if (activeTool !== "polygon") {
+      setPolygonPreviewPoint(null);
+    }
   }, [activeTool]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        clearDraftShape();
+        return;
+      }
       if (e.key === "Delete" || e.key === "Backspace") {
         if (selectedShapeId) {
           deleteShape(selectedShapeId);
@@ -276,7 +305,19 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedShapeId, deleteShape]);
+  }, [selectedShapeId, deleteShape, clearDraftShape]);
+
+  useEffect(() => {
+    const handleDocMouseDown = (e: MouseEvent) => {
+      if (!containerRef.current) return;
+      if (containerRef.current.contains(e.target as Node)) return;
+      if (currentPoints.length > 0) {
+        clearDraftShape();
+      }
+    };
+    document.addEventListener("mousedown", handleDocMouseDown, true);
+    return () => document.removeEventListener("mousedown", handleDocMouseDown, true);
+  }, [currentPoints.length, clearDraftShape]);
 
   const renderHelperText = () => {
     if (activeTool === "rect") return "Click start and end points for rectangle.";
@@ -394,12 +435,14 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
               {activeTool === "polygon" && (
                 <>
                   <polyline
-                    points={currentPoints.map((p) => `${p.x},${p.y}`).join(" ")}
+                    points={[...currentPoints, ...(polygonPreviewPoint ? [polygonPreviewPoint] : [])]
+                      .map((p) => `${p.x},${p.y}`)
+                      .join(" ")}
                     fill="none"
                     stroke="red"
                     strokeWidth={2 / zoomLevel}
                   />
-                  {currentPoints.map((p, idx) => (
+                  {[...currentPoints, ...(polygonPreviewPoint ? [polygonPreviewPoint] : [])].map((p, idx) => (
                     <circle key={idx} cx={p.x} cy={p.y} r={3 / zoomLevel} fill="red" />
                   ))}
                 </>
