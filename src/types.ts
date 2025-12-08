@@ -1,4 +1,4 @@
-export type ProjectType = "segmentation" | "video_tracking_segmentation";
+export type ProjectType = "segmentation" | "video_tracking_segmentation" | "ocr" | "ocr_kie";
 
 export interface MaskCategory {
   id: number;
@@ -27,15 +27,31 @@ export interface SegmentationMask {
   category: MaskCategory | null;
 }
 
+export type OCRShapeType = "rect" | "polygon";
+
+export interface OCRPoint {
+  x: number;
+  y: number;
+}
+
+export interface OCRAnnotation {
+  id: string;
+  type: OCRShapeType;
+  points: OCRPoint[];
+  text: string;
+  category: string | null;
+}
+
 export interface ImageModel {
   id: number;
   image: string;
   thumbnail: string | null;
   uploaded_at: string;
-  coordinates: Coordinate[];
+  coordinates?: Coordinate[];
   is_label: boolean;
   original_filename: string;
-  masks: SegmentationMask[];
+  masks?: SegmentationMask[];
+  ocr_annotations?: OCRAnnotation[];
 }
 
 export interface Project {

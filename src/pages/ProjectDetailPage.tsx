@@ -15,15 +15,20 @@ import {
   DialogActions,
   TextField,
   CircularProgress,
+  ToggleButton,
+  ToggleButtonGroup,
 } from "@mui/material";
 import type { AlertColor } from "@mui/material";
 
 import ImageDisplaySegmentation from "../components/ImageDisplaySegmentation";
+import ImageDisplayOCR from "../components/ImageDisplayOCR";
 import NavigationButtons from "../components/NavigationButtons";
 import Controls from "../components/Controls";
 import ThumbnailGrid from "../components/ThumbnailGrid";
 import MaskCategoryPanel from "../components/MaskCategoryPanel";
 import TextPromptMaskForm from "../components/TextPromptMaskForm";
+import OCRControls from "../components/OCRControls";
+import OCRTextList from "../components/OCRTextList";
 import { AuthContext } from "../AuthContext";
 import type {
   ImageModel,
@@ -38,6 +43,8 @@ interface NotificationState {
   message: string;
   severity: AlertColor;
 }
+
+type OCRTool = "rect" | "polygon" | "select";
 
 function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -63,6 +70,13 @@ function ProjectDetailPage() {
   const [stride, setStride] = useState<number>(1);
   const modelLoadedRef = useRef(false);
   const projectType: ProjectType = project?.type || "segmentation";
+  const [ocrTool, setOcrTool] = useState<OCRTool>("select");
+  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
+  const currentImage = images[currentIndex];
+  const isSegmentationProject =
+    projectType === "segmentation" || projectType === "video_tracking_segmentation";
+  const isOCRProject = projectType === "ocr" || projectType === "ocr_kie";
+  const imageEndpointBase = isOCRProject ? "ocr-images" : "images";
   const loading = loadingCounter > 0;
 
   const [blockingOps, setBlockingOps] = useState(0);
@@ -163,6 +177,7 @@ function ProjectDetailPage() {
         ...m,
         mask: bustCache(m.mask),
       })),
+      ocr_annotations: img.ocr_annotations || [],
     }),
     [bustCache]
   );
@@ -203,15 +218,17 @@ function ProjectDetailPage() {
     modelLoadedRef.current = false;
   }, [projectId]);
 
+  useEffect(() => {
+    setSelectedShapeId(null);
+    setOcrTool("select");
+  }, [currentIndex, projectType]);
+
   useEffect(() => () => {
     clearProgressPolling();
   }, [clearProgressPolling]);
 
   useEffect(() => {
-    const requiresModel =
-      projectType === "segmentation" ||
-      projectType === "video_tracking_segmentation";
-    if (!project || !requiresModel || modelLoadedRef.current) {
+    if (!project || !isSegmentationProject || modelLoadedRef.current) {
       return;
     }
 
@@ -240,7 +257,7 @@ function ProjectDetailPage() {
     };
 
     loadModel();
-  }, [project, projectType, projectId, startBlocking, stopBlocking, startLoading, stopLoading]);
+  }, [project, projectType, projectId, startBlocking, stopBlocking, startLoading, stopLoading, isSegmentationProject]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -344,7 +361,7 @@ function ProjectDetailPage() {
           });
 
           try {
-            const response = await axiosInstance.post<ImageModel[]>(`images/`, formData, {
+            const response = await axiosInstance.post<ImageModel[]>(`${imageEndpointBase}/`, formData, {
               headers: {
                 "Content-Type": "multipart/form-data",
               },
@@ -648,6 +665,48 @@ function ProjectDetailPage() {
 
   const handleClearLabels = async () => {
     if (isBlocked) return;
+    if (isOCRProject) {
+      const targetImage = currentImage;
+      if (!targetImage) return;
+      try {
+        startBlocking("Clearing OCR annotations...");
+        await axiosInstance.delete(`${imageEndpointBase}/${targetImage.id}/ocr_annotations/`, {
+          data: { ids: [] },
+        });
+        setImages((prev) =>
+          prev.map((img) =>
+            img.id === targetImage.id ? { ...img, ocr_annotations: [] } : img
+          )
+        );
+        setProject((prev) =>
+          prev
+            ? {
+                ...prev,
+                images: prev.images.map((img) =>
+                  img.id === targetImage.id ? { ...img, ocr_annotations: [] } : img
+                ),
+              }
+            : prev
+        );
+        setSelectedShapeId(null);
+        setNotification({
+          open: true,
+          message: "OCR annotations cleared.",
+          severity: "info",
+        });
+      } catch (error) {
+        console.error("Error clearing OCR annotations:", error);
+        setNotification({
+          open: true,
+          message: "Failed to clear OCR annotations.",
+          severity: "error",
+        });
+      } finally {
+        stopBlocking();
+      }
+      return;
+    }
+
     if (!project) return;
     try {
       await axiosInstance.delete(`projects/${project.id}/delete_masks/`);
@@ -818,93 +877,206 @@ function ProjectDetailPage() {
       </Box>
       {loading && <LinearProgress />}
       {images.length > 0 ? (
-        <Box display="flex" flexDirection="column" flexGrow={1} height="100%" overflow="hidden">
-          <Box display="flex" flexGrow={1} overflow="hidden">
-            <Box
-              sx={{
-                flexShrink: 0,
-                width: 320,
-                minWidth: 260,
-                maxWidth: "50vw",
-                resize: "horizontal",
-                overflow: "auto",
-                display: "flex",
-                flexDirection: "column",
-                gap: 1,
-                height: "100%",
-                p: 2,
-                backgroundColor: "#0f1624",
-                borderRight: "1px solid #1f2a3d",
-                boxShadow: "inset -1px 0 0 rgba(255,255,255,0.04)",
-              }}
-            >
-              <TextPromptMaskForm
-                disabled={images.length === 0 || isBlocked}
-                loading={promptLoading || loading || isBlocked}
-                onSubmit={handleGenerateFromPrompt}
-              />
-              <MaskCategoryPanel
-                categories={categories}
-                activeCategoryId={activeCategoryId}
-                onSelectCategory={handleSelectCategory}
-                onAddCategory={handleAddCategory}
-                onDeleteCategory={handleDeleteCategory}
-                onColorChange={handleColorChange}
-              />
-            </Box>
-            <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
-              <Box display="flex" flexGrow={1} overflow="hidden">
-                <Box flexGrow={1} display="flex" overflow="hidden">
-                  <ImageDisplaySegmentation
-                    image={images[currentIndex]}
-                    categories={categories}
-                    activeCategoryId={activeCategoryId}
-                    highlightCategoryId={highlightCategoryId}
-                    highlightSignal={highlightSignal}
+        isOCRProject ? (
+          <Box display="flex" flexDirection="column" flexGrow={1} height="100%" overflow="hidden">
+            <Box display="flex" flexGrow={1} overflow="hidden">
+              <Box
+                sx={{
+                  flexShrink: 0,
+                  width: 320,
+                  minWidth: 260,
+                  maxWidth: "50vw",
+                  resize: "horizontal",
+                  overflow: "auto",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 1.5,
+                  height: "100%",
+                  p: 2,
+                  backgroundColor: "#0f1624",
+                  borderRight: "1px solid #1f2a3d",
+                  boxShadow: "inset -1px 0 0 rgba(255,255,255,0.04)",
+                }}
+              >
+                {currentImage && (
+                  <OCRControls
+                    image={currentImage}
+                    projectType={projectType}
+                    endpointBase={imageEndpointBase}
                     onImageUpdated={handleImageUpdated}
-                    onPointsUpdated={handlePointsUpdated}
-                    disabled={isBlocked}
                     onStartBlocking={startBlocking}
                     onStopBlocking={stopBlocking}
-                    onRequireCategory={() =>
-                      setNotification({
-                        open: true,
-                        message: "Create/select a category before adding points.",
-                        severity: "info",
-                      })
-                    }
-                  />
-                </Box>
-                <Box
-                  width={80}
-                  display="flex"
-                  flexDirection="column"
-                  justifyContent="center"
-                  alignItems="flex-start"
-                >
-                  <NavigationButtons
-                    onPrev={handlePrevImage}
-                    onNext={handleNextImage}
-                    disablePrev={currentIndex === 0}
-                    disableNext={currentIndex === images.length - 1}
                     disabled={isBlocked}
                   />
-                  <Controls
+                )}
+                {currentImage && (
+                  <OCRTextList
+                    image={currentImage}
                     projectType={projectType}
-                    onPropagate={handlePropagateMask}
-                    onClearLabels={handleClearLabels}
+                    selectedShapeId={selectedShapeId}
+                    onSelectShape={setSelectedShapeId}
+                    onImageUpdated={handleImageUpdated}
                     disabled={isBlocked}
+                    endpointBase={imageEndpointBase}
                   />
+                )}
+              </Box>
+              <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
+                <Box
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="space-between"
+                  flexWrap="wrap"
+                  gap={1}
+                  mb={1}
+                >
+                  <ToggleButtonGroup
+                    color="primary"
+                    value={ocrTool}
+                    exclusive
+                    size="small"
+                    onChange={(_, value: OCRTool | null) => value && setOcrTool(value)}
+                  >
+                    <ToggleButton value="select">Select</ToggleButton>
+                    <ToggleButton value="rect">Rect</ToggleButton>
+                    <ToggleButton value="polygon">Polygon</ToggleButton>
+                  </ToggleButtonGroup>
+                </Box>
+                <Box display="flex" flexGrow={1} overflow="hidden">
+                  <Box flexGrow={1} display="flex" overflow="hidden">
+                    {currentImage && (
+                      <ImageDisplayOCR
+                        image={currentImage}
+                        activeTool={ocrTool}
+                        selectedShapeId={selectedShapeId}
+                        onSelectShape={setSelectedShapeId}
+                        onImageUpdated={handleImageUpdated}
+                        disabled={isBlocked}
+                        onStartBlocking={startBlocking}
+                        onStopBlocking={stopBlocking}
+                        endpointBase={imageEndpointBase}
+                      />
+                    )}
+                  </Box>
+                  <Box
+                    width={80}
+                    display="flex"
+                    flexDirection="column"
+                    justifyContent="center"
+                    alignItems="flex-start"
+                  >
+                    <NavigationButtons
+                      onPrev={handlePrevImage}
+                      onNext={handleNextImage}
+                      disablePrev={currentIndex === 0}
+                      disableNext={currentIndex === images.length - 1}
+                      disabled={isBlocked}
+                    />
+                    <Controls
+                      projectType={projectType}
+                      onPropagate={handlePropagateMask}
+                      onClearLabels={handleClearLabels}
+                      disabled={isBlocked}
+                    />
+                  </Box>
                 </Box>
               </Box>
             </Box>
+            <ThumbnailGrid
+              images={images}
+              onThumbnailClick={handleThumbnailClick}
+              currentIndex={currentIndex}
+            />
           </Box>
-          <ThumbnailGrid
-            images={images}
-            onThumbnailClick={handleThumbnailClick}
-            currentIndex={currentIndex}
-          />
-        </Box>
+        ) : (
+          <Box display="flex" flexDirection="column" flexGrow={1} height="100%" overflow="hidden">
+            <Box display="flex" flexGrow={1} overflow="hidden">
+              <Box
+                sx={{
+                  flexShrink: 0,
+                  width: 320,
+                  minWidth: 260,
+                  maxWidth: "50vw",
+                  resize: "horizontal",
+                  overflow: "auto",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 1,
+                  height: "100%",
+                  p: 2,
+                  backgroundColor: "#0f1624",
+                  borderRight: "1px solid #1f2a3d",
+                  boxShadow: "inset -1px 0 0 rgba(255,255,255,0.04)",
+                }}
+              >
+                <TextPromptMaskForm
+                  disabled={images.length === 0 || isBlocked}
+                  loading={promptLoading || loading || isBlocked}
+                  onSubmit={handleGenerateFromPrompt}
+                />
+                <MaskCategoryPanel
+                  categories={categories}
+                  activeCategoryId={activeCategoryId}
+                  onSelectCategory={handleSelectCategory}
+                  onAddCategory={handleAddCategory}
+                  onDeleteCategory={handleDeleteCategory}
+                  onColorChange={handleColorChange}
+                />
+              </Box>
+              <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
+                <Box display="flex" flexGrow={1} overflow="hidden">
+                  <Box flexGrow={1} display="flex" overflow="hidden">
+                    <ImageDisplaySegmentation
+                      image={images[currentIndex]}
+                      categories={categories}
+                      activeCategoryId={activeCategoryId}
+                      highlightCategoryId={highlightCategoryId}
+                      highlightSignal={highlightSignal}
+                      onImageUpdated={handleImageUpdated}
+                      onPointsUpdated={handlePointsUpdated}
+                      disabled={isBlocked}
+                      onStartBlocking={startBlocking}
+                      onStopBlocking={stopBlocking}
+                      onRequireCategory={() =>
+                        setNotification({
+                          open: true,
+                          message: "Create/select a category before adding points.",
+                          severity: "info",
+                        })
+                      }
+                    />
+                  </Box>
+                  <Box
+                    width={80}
+                    display="flex"
+                    flexDirection="column"
+                    justifyContent="center"
+                    alignItems="flex-start"
+                  >
+                    <NavigationButtons
+                      onPrev={handlePrevImage}
+                      onNext={handleNextImage}
+                      disablePrev={currentIndex === 0}
+                      disableNext={currentIndex === images.length - 1}
+                      disabled={isBlocked}
+                    />
+                    <Controls
+                      projectType={projectType}
+                      onPropagate={handlePropagateMask}
+                      onClearLabels={handleClearLabels}
+                      disabled={isBlocked}
+                    />
+                  </Box>
+                </Box>
+              </Box>
+            </Box>
+            <ThumbnailGrid
+              images={images}
+              onThumbnailClick={handleThumbnailClick}
+              currentIndex={currentIndex}
+            />
+          </Box>
+        )
       ) : (
         <Typography variant="body1" color="text.secondary" align="center">
           No images loaded. Please upload images.
