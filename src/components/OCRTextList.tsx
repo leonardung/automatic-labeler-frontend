@@ -130,7 +130,14 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
           bgcolor: bg,
           color: textColor,
           fontWeight: 700,
-          height: 26,
+          height: 22,
+          minWidth: 35,
+          "& .MuiChip-label": {
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            px: 1,
+            maxWidth: "14ch",
+          },
           border: category ? "none" : "1px solid rgba(255,255,255,0.16)",
         }}
       />
@@ -161,7 +168,6 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
       <List sx={{ flexGrow: 1, overflowY: "auto", p: 0 }}>
         {annotations.map((shape, index) => {
           const isSelected = shape.id === selectedShapeId;
-          const shapeType = (shape as any).type || (shape as any).shape_type || "";
           const matchesActiveCategory =
             activeCategoryId !== null &&
             categories.find((c) => c.id === activeCategoryId)?.name === shape.category;
@@ -173,10 +179,10 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
                 selected={isSelected}
                 sx={{
                   display: "grid",
-                  gridTemplateColumns: "72px 1fr auto 42px",
+                  gridTemplateColumns: "24px minmax(0, 1fr) auto 36px",
                   alignItems: "center",
-                  gap: 1,
-                  py: 1,
+                  gap: 0.6,
+                  py: 0.7,
                   px: 1.5,
                   borderLeft: isSelected ? "4px solid #60a5fa" : "4px solid transparent",
                   bgcolor: isSelected
@@ -192,11 +198,11 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
                 <Tooltip title={`ID: ${shape.id}`} placement="top" arrow>
                   <Typography
                     variant="caption"
-                    color="rgba(255,255,255,0.8)"
-                    sx={{ fontWeight: 700 }}
+                    color="rgba(255,255,255,0.85)"
+                    sx={{ fontWeight: 800 }}
                     noWrap
                   >
-                    #{index + 1} • {shapeType}
+                    #{index + 1}
                   </Typography>
                 </Tooltip>
                 <InputBase
@@ -207,12 +213,12 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
                   disabled={disabled}
                   sx={{
                     px: 1,
-                    py: 0.6,
+                    py: 0.45,
                     borderRadius: 1,
                     backgroundColor: "rgba(255,255,255,0.04)",
                     border: "1px solid rgba(255,255,255,0.08)",
                     color: "white",
-                    fontSize: 13,
+                    fontSize: 12.5,
                     "& .MuiInputBase-input": {
                       textOverflow: "ellipsis",
                     },
@@ -221,7 +227,12 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
                   inputProps={{ "aria-label": "recognized text" }}
                 />
                 <Tooltip title={shape.category || "Unlabeled"} arrow>
-                  <Box onClick={(e) => e.stopPropagation()}>{renderCategoryChip(shape.category)}</Box>
+                  <Box
+                    onClick={(e) => e.stopPropagation()}
+                    sx={{ width: "100%", display: "flex", justifyContent: "flex-end" }}
+                  >
+                    {renderCategoryChip(shape.category)}
+                  </Box>
                 </Tooltip>
                 <IconButton
                   size="small"

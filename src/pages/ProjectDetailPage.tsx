@@ -921,8 +921,8 @@ function ProjectDetailPage() {
               <Box
                 sx={{
                   flexShrink: 0,
-                  width: 320,
-                  minWidth: 260,
+                  width: 380,
+                  minWidth: 300,
                   maxWidth: "50vw",
                   resize: "horizontal",
                   overflow: "auto",
@@ -1044,8 +1044,8 @@ function ProjectDetailPage() {
               <Box
                 sx={{
                   flexShrink: 0,
-                  width: 320,
-                  minWidth: 260,
+                  width: 380,
+                  minWidth: 300,
                   maxWidth: "50vw",
                   resize: "horizontal",
                   overflow: "auto",
