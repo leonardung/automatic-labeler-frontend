@@ -8,6 +8,8 @@ interface ImageDisplaySegmentationProps {
   image: ImageModel;
   categories: MaskCategory[];
   activeCategoryId: number | null;
+  highlightCategoryId?: number | null;
+  highlightSignal?: number;
   onImageUpdated?: (image: ImageModel) => void;
   onPointsUpdated?: (imageId: number, categoryId: number, points: SegmentationPoint[]) => void;
   onRequireCategory?: () => void;
@@ -20,6 +22,8 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
   image,
   categories,
   activeCategoryId,
+  highlightCategoryId,
+  highlightSignal,
   onImageUpdated,
   onPointsUpdated,
   onRequireCategory,
@@ -52,6 +56,13 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
   const activeCategory = categories.find((c) => c.id === activeCategoryId);
   const [maskVersion, setMaskVersion] = useState(() => Date.now());
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [flashCategoryId, setFlashCategoryId] = useState<number | null>(null);
+  const [flashOn, setFlashOn] = useState(false);
+  const lastSignalRef = useRef<number | undefined>(undefined);
+  const latestHighlightCategoryRef = useRef<number | null>(null);
+  const [loadedMasks, setLoadedMasks] = useState<
+    { img: HTMLImageElement; mask: SegmentationMask }[]
+  >([]);
 
   const parseTint = (color?: string | null) => {
     if (!color) return { r: 0, g: 200, b: 0, a: 0.4 };
@@ -77,6 +88,26 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
   useEffect(() => {
     setMaskVersion(Date.now());
   }, [image.id, image.masks]);
+
+  useEffect(() => {
+    latestHighlightCategoryRef.current = highlightCategoryId ?? null;
+  }, [highlightCategoryId]);
+
+  useEffect(() => {
+    if (highlightSignal === undefined) return;
+    if (highlightSignal === lastSignalRef.current) return;
+    lastSignalRef.current = highlightSignal;
+    const targetCategory = latestHighlightCategoryRef.current;
+    if (!targetCategory) return;
+    setFlashCategoryId(targetCategory);
+    setFlashOn(true);
+    const fadeTimer = window.setTimeout(() => setFlashOn(false), 220);
+    const clearTimer = window.setTimeout(() => setFlashCategoryId(null), 400);
+    return () => {
+      window.clearTimeout(fadeTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [highlightSignal]);
 
   const handleImageClick = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -163,13 +194,9 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
 
   useEffect(() => {
     let cancelled = false;
-    const canvas = canvasRef.current;
-    if (!canvas || imgDimensions.width === 0 || imgDimensions.height === 0) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
     const masks = image.masks || [];
     if (!masks.length) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      setLoadedMasks([]);
       return;
     }
 
@@ -192,49 +219,116 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
 
     Promise.all(loaders)
       .then((loaded) => {
-        if (cancelled || !loaded.length) return;
-        const { img: firstImg } = loaded[0];
-        canvas.width = firstImg.width;
-        canvas.height = firstImg.height;
-        canvas.style.width = `${imgDimensions.width}px`;
-        canvas.style.height = `${imgDimensions.height}px`;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        loaded.forEach(({ img, mask }) => {
-          const { r, g, b, a } = parseTint(mask.category?.color);
-          const off = document.createElement("canvas");
-          off.width = img.width;
-          off.height = img.height;
-          const offCtx = off.getContext("2d");
-          if (!offCtx) return;
-          offCtx.drawImage(img, 0, 0);
-          const imageData = offCtx.getImageData(0, 0, img.width, img.height);
-          const data = imageData.data;
-          for (let i = 0; i < data.length; i += 4) {
-            const alpha = data[i];
-            if (alpha === 0) {
-              data[i + 3] = 0;
-              continue;
-            }
-            data[i] = r;
-            data[i + 1] = g;
-            data[i + 2] = b;
-            data[i + 3] = Math.min(255, alpha * a);
-          }
-          offCtx.putImageData(imageData, 0, 0);
-          ctx.drawImage(off, 0, 0);
-        });
+        if (cancelled) return;
+        setLoadedMasks(loaded);
       })
       .catch(() => {
         if (!cancelled) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          setLoadedMasks([]);
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [image.masks, imgDimensions.width, imgDimensions.height, maskVersion, versionedUrl]);
+  }, [image.masks, maskVersion, versionedUrl]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || imgDimensions.width === 0 || imgDimensions.height === 0) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    if (!loadedMasks.length) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+
+    const { img: firstImg } = loadedMasks[0];
+    canvas.width = firstImg.width;
+    canvas.height = firstImg.height;
+    canvas.style.width = `${imgDimensions.width}px`;
+    canvas.style.height = `${imgDimensions.height}px`;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    loadedMasks.forEach(({ img, mask }) => {
+      const { r, g, b, a } = parseTint(mask.category?.color);
+      const off = document.createElement("canvas");
+      off.width = img.width;
+      off.height = img.height;
+      const offCtx = off.getContext("2d");
+      if (!offCtx) return;
+      offCtx.drawImage(img, 0, 0);
+      const imageData = offCtx.getImageData(0, 0, img.width, img.height);
+      const data = imageData.data;
+      const outlineData = new Uint8ClampedArray(data.length);
+      const width = img.width;
+      const height = img.height;
+      const isHighlighted = flashCategoryId !== null && mask.category?.id === flashCategoryId;
+      const alphaSource = new Uint8ClampedArray((data.length / 4) | 0);
+
+      for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
+        alphaSource[p] = data[i];
+      }
+
+      const alphaAt = (x: number, y: number) => {
+        if (x < 0 || y < 0 || x >= width || y >= height) return 0;
+        return alphaSource[y * width + x];
+      };
+
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const idx = (y * width + x) * 4;
+          const sourceAlpha = alphaSource[y * width + x];
+          if (sourceAlpha === 0) {
+            data[idx + 3] = 0;
+            continue;
+          }
+          const boostedAlpha = isHighlighted && flashOn
+            ? Math.min(255, sourceAlpha * Math.min(1, a * 2))
+            : Math.min(255, sourceAlpha * a);
+          data[idx] = r;
+          data[idx + 1] = g;
+          data[idx + 2] = b;
+          data[idx + 3] = boostedAlpha;
+
+          const hasEdge =
+            x === 0 ||
+            y === 0 ||
+            x === width - 1 ||
+            y === height - 1 ||
+            alphaAt(x - 1, y) === 0 ||
+            alphaAt(x + 1, y) === 0 ||
+            alphaAt(x, y - 1) === 0 ||
+            alphaAt(x, y + 1) === 0;
+
+          if (hasEdge) {
+            const edgeIdx = idx;
+            outlineData[edgeIdx] = Math.min(255, r + 40);
+            outlineData[edgeIdx + 1] = Math.min(255, g + 40);
+            outlineData[edgeIdx + 2] = Math.min(255, b + 40);
+            outlineData[edgeIdx + 3] = Math.min(255, 120 + sourceAlpha * 0.45);
+          }
+        }
+      }
+      offCtx.putImageData(imageData, 0, 0);
+      ctx.drawImage(off, 0, 0);
+
+      const outlineCanvas = document.createElement("canvas");
+      outlineCanvas.width = width;
+      outlineCanvas.height = height;
+      const outlineCtx = outlineCanvas.getContext("2d");
+      if (outlineCtx) {
+        outlineCtx.putImageData(new ImageData(outlineData, width, height), 0, 0);
+        ctx.drawImage(outlineCanvas, 0, 0);
+      }
+    });
+  }, [
+    loadedMasks,
+    imgDimensions.width,
+    imgDimensions.height,
+    flashCategoryId,
+    flashOn,
+  ]);
 
   const renderPoints = () => {
     return points.map((point, index) => {

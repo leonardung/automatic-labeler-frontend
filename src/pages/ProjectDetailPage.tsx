@@ -48,6 +48,8 @@ function ProjectDetailPage() {
   const [images, setImages] = useState<ImageModel[]>([]);
   const [categories, setCategories] = useState<MaskCategory[]>([]);
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
+  const [highlightCategoryId, setHighlightCategoryId] = useState<number | null>(null);
+  const [highlightSignal, setHighlightSignal] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loadingCounter, setLoadingCounter] = useState(0);
   const [notification, setNotification] = useState<NotificationState>({
@@ -144,6 +146,12 @@ function ProjectDetailPage() {
     setCurrentIndex((prevIndex) => Math.max(prevIndex - 1, 0));
   }, [isBlocked]);
 
+  const handleSelectCategory = (categoryId: number) => {
+    setActiveCategoryId(categoryId);
+    setHighlightCategoryId(categoryId);
+    setHighlightSignal((prev) => prev + 1);
+  };
+
   const bustCache = useCallback((url?: string | null): string | null => {
     return url ? `${url.split("?")[0]}?t=${Date.now()}` : null;
   }, []);
@@ -177,6 +185,7 @@ function ProjectDetailPage() {
           decoratedImages[0]?.masks?.[0]?.category?.id ||
           null;
         setActiveCategoryId(initialCategory);
+        setHighlightCategoryId(initialCategory);
       } catch (error) {
         console.error("Error fetching project details:", error);
         setNotification({
@@ -837,7 +846,7 @@ function ProjectDetailPage() {
               <MaskCategoryPanel
                 categories={categories}
                 activeCategoryId={activeCategoryId}
-                onSelectCategory={setActiveCategoryId}
+                onSelectCategory={handleSelectCategory}
                 onAddCategory={handleAddCategory}
                 onDeleteCategory={handleDeleteCategory}
                 onColorChange={handleColorChange}
@@ -850,6 +859,8 @@ function ProjectDetailPage() {
                     image={images[currentIndex]}
                     categories={categories}
                     activeCategoryId={activeCategoryId}
+                    highlightCategoryId={highlightCategoryId}
+                    highlightSignal={highlightSignal}
                     onImageUpdated={handleImageUpdated}
                     onPointsUpdated={handlePointsUpdated}
                     disabled={isBlocked}
