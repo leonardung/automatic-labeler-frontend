@@ -60,6 +60,7 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
   const [flashOn, setFlashOn] = useState(false);
   const lastSignalRef = useRef<number | undefined>(undefined);
   const latestHighlightCategoryRef = useRef<number | null>(null);
+  const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
   const [loadedMasks, setLoadedMasks] = useState<
     { img: HTMLImageElement; mask: SegmentationMask }[]
   >([]);
@@ -152,7 +153,44 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
 
   const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
+    event.stopPropagation();
   };
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    el.addEventListener("contextmenu", handler);
+    return () => {
+      el.removeEventListener("contextmenu", handler);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const el = containerRef.current;
+      if (!el) return;
+      const target = e.target as Node | null;
+      const inTree = !!(target && el.contains(target));
+      const rect = el.getBoundingClientRect();
+      const inBox =
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom;
+      if (inTree || inBox) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener("contextmenu", handler, true);
+    return () => {
+      window.removeEventListener("contextmenu", handler, true);
+    };
+  }, []);
 
   const persistMask = async (updatedPoints: SegmentationPoint[]) => {
     if (!activeCategory) {
@@ -183,6 +221,28 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
       console.error("Error generating mask:", error);
     } finally {
       onStopBlocking?.();
+    }
+  };
+
+  const handlePointMouseDown = (
+    event: React.MouseEvent<HTMLDivElement>,
+    point: SegmentationPoint,
+    index: number
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (disabled || isPanning) return;
+
+    const isLeftClick = event.button === 0;
+    const isRightClick = event.button === 2;
+    const shouldDelete = (isLeftClick && !point.include) || (isRightClick && point.include);
+    if (!shouldDelete) return;
+
+    const updatedPoints = points.filter((_, i) => i !== index);
+    setPoints(updatedPoints);
+    if (activeCategoryId) {
+      onPointsUpdated?.(image.id, activeCategoryId, updatedPoints);
+      persistMask(updatedPoints);
     }
   };
 
@@ -334,25 +394,33 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
     return points.map((point, index) => {
       const x = point.x * zoomLevel + panOffset.x;
       const y = point.y * zoomLevel + panOffset.y;
+      const isHovered = hoveredPointIndex === index;
+      const size = isHovered ? 20 : 15;
 
       return (
         <div
           key={`${point.x}-${point.y}-${index}`}
           style={{
             position: "absolute",
-            pointerEvents: "none",
+            pointerEvents: "auto",
             top: `${y}px`,
             left: `${x}px`,
             transform: "translate(-50%, -50%)",
           }}
+          onMouseEnter={() => setHoveredPointIndex(index)}
+          onMouseLeave={() => setHoveredPointIndex((prev) => (prev === index ? null : prev))}
+          onMouseDown={(e) => handlePointMouseDown(e, point, index)}
+          onContextMenu={handleContextMenu}
         >
           <div
             style={{
-              width: "15px",
-              height: "15px",
+              width: `${size}px`,
+              height: `${size}px`,
               borderRadius: "50%",
               backgroundColor: point.include ? "green" : "red",
               border: "2px solid white",
+              transition: "transform 120ms ease, width 120ms ease, height 120ms ease",
+              transform: isHovered ? "scale(1.1)" : "scale(1)",
             }}
           ></div>
         </div>
@@ -389,7 +457,10 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
   };
 
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+    <div
+      style={{ position: "relative", width: "100%", height: "100%" }}
+      onContextMenuCapture={handleContextMenu}
+    >
       {/* Toggle for keeping zoom and pan */}
       <Box
         sx={{
