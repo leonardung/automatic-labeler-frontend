@@ -157,19 +157,6 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
   };
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const handler = (e: Event) => {
-      e.preventDefault();
-      e.stopPropagation();
-    };
-    el.addEventListener("contextmenu", handler);
-    return () => {
-      el.removeEventListener("contextmenu", handler);
-    };
-  }, []);
-
-  useEffect(() => {
     const handler = (e: MouseEvent) => {
       const el = containerRef.current;
       if (!el) return;
@@ -245,6 +232,26 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
       persistMask(updatedPoints);
     }
   };
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (hoveredPointIndex === null) return;
+      if (e.key !== "Backspace" && e.key !== "Delete") return;
+      e.preventDefault();
+      const index = hoveredPointIndex;
+      if (index < 0 || index >= points.length) return;
+      const updatedPoints = points.filter((_, i) => i !== index);
+      setPoints(updatedPoints);
+      if (activeCategoryId) {
+        onPointsUpdated?.(image.id, activeCategoryId, updatedPoints);
+        persistMask(updatedPoints);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => {
+      window.removeEventListener("keydown", handler);
+    };
+  }, [hoveredPointIndex, points, activeCategoryId, image.id, onPointsUpdated, persistMask]);
 
   const versionedUrl = useCallback((url?: string | null) => {
     if (!url) return null;
@@ -457,10 +464,7 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
   };
 
   return (
-    <div
-      style={{ position: "relative", width: "100%", height: "100%" }}
-      onContextMenuCapture={handleContextMenu}
-    >
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
       {/* Toggle for keeping zoom and pan */}
       <Box
         sx={{
