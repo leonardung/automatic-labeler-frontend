@@ -85,6 +85,7 @@ function ProjectDetailPage() {
   const isSegmentationProject =
     projectType === "segmentation" || projectType === "video_tracking_segmentation";
   const isOCRProject = projectType === "ocr" || projectType === "ocr_kie";
+  const showOcrCategoryPanel = projectType === "ocr_kie";
   const imageEndpointBase = isOCRProject ? "ocr-images" : "images";
   const loading = loadingCounter > 0;
 
@@ -174,7 +175,7 @@ function ProjectDetailPage() {
     setActiveCategoryId(categoryId);
     setHighlightCategoryId(categoryId);
     setHighlightSignal((prev) => prev + 1);
-    if (isOCRProject) {
+    if (isOCRProject && showOcrCategoryPanel) {
       applyCategoryToSelection(categoryId);
     }
   };
@@ -990,28 +991,30 @@ function ProjectDetailPage() {
                     disabled={isBlocked}
                   />
                 )}
-                <OcrCategoryPanel
-                  categories={categories}
-                  activeCategoryId={activeCategoryId}
-                  onSelectCategory={handleSelectCategory}
-                  onAddCategory={handleAddCategory}
-                  onDeleteCategory={handleDeleteCategory}
-                  onColorChange={handleColorChange}
-                  onRenameCategory={handleRenameCategory}
-                  disabled={isBlocked}
-                />
+                {showOcrCategoryPanel && (
+                  <OcrCategoryPanel
+                    categories={categories}
+                    activeCategoryId={activeCategoryId}
+                    onSelectCategory={handleSelectCategory}
+                    onAddCategory={handleAddCategory}
+                    onDeleteCategory={handleDeleteCategory}
+                    onColorChange={handleColorChange}
+                    onRenameCategory={handleRenameCategory}
+                    disabled={isBlocked}
+                  />
+                )}
                 {currentImage && (
                   <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-                    <OCRTextList
-                      image={currentImage}
-                      categories={categories}
-                      activeCategoryId={activeCategoryId}
-                      selectedShapeIds={selectedShapeIds}
-                      onSelectShapes={setSelectedShapeIds}
-                      onImageUpdated={handleImageUpdated}
-                      disabled={isBlocked}
-                      endpointBase={imageEndpointBase}
-                    />
+                      <OCRTextList
+                        image={currentImage}
+                        categories={categories}
+                        activeCategoryId={activeCategoryId}
+                        selectedShapeIds={selectedShapeIds}
+                        onSelectShapes={setSelectedShapeIds}
+                        onImageUpdated={handleImageUpdated}
+                        disabled={isBlocked}
+                        endpointBase={imageEndpointBase}
+                      />
                   </Box>
                 )}
               </Box>
