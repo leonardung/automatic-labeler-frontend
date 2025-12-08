@@ -289,6 +289,15 @@ function ProjectDetailPage() {
         handlePrevImage();
       } else if (event.key === "d") {
         handleNextImage();
+      } else if (isOCRProject) {
+        const key = event.key.toLowerCase();
+        if (key === "s") {
+          setOcrTool("select");
+        } else if (key === "r") {
+          setOcrTool("rect");
+        } else if (key === "p") {
+          setOcrTool("polygon");
+        }
       }
     };
 
@@ -296,7 +305,7 @@ function ProjectDetailPage() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handleNextImage, handlePrevImage, isBlocked]);
+  }, [handleNextImage, handlePrevImage, isBlocked, isOCRProject]);
 
   const handleSelectFolder = async () => {
     if (isBlocked) return;
@@ -1033,10 +1042,11 @@ function ProjectDetailPage() {
                     exclusive
                     size="small"
                     onChange={(_, value: OCRTool | null) => value && setOcrTool(value)}
+                    sx={{ "& .MuiToggleButton-root": { minWidth: 80 } }}
                   >
-                    <ToggleButton value="select">Select</ToggleButton>
-                    <ToggleButton value="rect">Rect</ToggleButton>
-                    <ToggleButton value="polygon">Polygon</ToggleButton>
+                    <ToggleButton value="select">Select (S)</ToggleButton>
+                    <ToggleButton value="rect">Rect (R)</ToggleButton>
+                    <ToggleButton value="polygon">Polygon (P)</ToggleButton>
                   </ToggleButtonGroup>
                 </Box>
                 <Box display="flex" flexGrow={1} overflow="hidden">
