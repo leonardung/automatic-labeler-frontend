@@ -72,6 +72,7 @@ function ProjectDetailPage() {
   const modelLoadedRef = useRef(false);
   const projectType: ProjectType = project?.type || "segmentation";
   const isOcrProject = projectType === "ocr" || projectType === "ocr_kie";
+  const imageEndpoint = isOcrProject ? "ocr-images" : "images";
   const loading = loadingCounter > 0;
 
   const [blockingOps, setBlockingOps] = useState(0);
@@ -388,7 +389,8 @@ function ProjectDetailPage() {
           });
 
           try {
-            const response = await axiosInstance.post<ImageModel[]>(`images/`, formData, {
+            const uploadEndpoint = isOcrProject ? "ocr-images" : "images";
+            const response = await axiosInstance.post<ImageModel[]>(`${uploadEndpoint}/`, formData, {
               headers: {
                 "Content-Type": "multipart/form-data",
               },
@@ -574,7 +576,7 @@ function ProjectDetailPage() {
     async (imageId: number, shapes: OcrShape[]) => {
       try {
         const response = await axiosInstance.post<{ shapes: OcrShape[] }>(
-          `images/${imageId}/ocr_annotations/`,
+          `${imageEndpoint}/${imageId}/ocr_annotations/`,
           { shapes }
         );
         const saved = response.data?.shapes || shapes;
@@ -595,7 +597,7 @@ function ProjectDetailPage() {
         });
       }
     },
-    [currentIndex, images, selectedShapeId]
+    [currentIndex, images, selectedShapeId, imageEndpoint]
   );
 
   const handleOcrShapesChanged = (imageId: number, updatedShapes: OcrShape[]) => {
@@ -624,7 +626,7 @@ function ProjectDetailPage() {
       startBlocking("Detecting regions...");
       startLoading();
       const response = await axiosInstance.post<{ shapes: OcrShape[] }>(
-        `images/${img.id}/detect_regions/`,
+        `${imageEndpoint}/${img.id}/detect_regions/`,
         { mode: projectType }
       );
       const detectedShapes = response.data?.shapes || [];
@@ -665,7 +667,7 @@ function ProjectDetailPage() {
       startBlocking("Running OCR...");
       startLoading();
       const response = await axiosInstance.post<{ shapes: OcrShape[] }>(
-        `images/${img.id}/recognize_text/`,
+        `${imageEndpoint}/${img.id}/recognize_text/`,
         { shapes: shapesForImage }
       );
       const recognizedShapes = response.data?.shapes || shapesForImage;
@@ -705,7 +707,7 @@ function ProjectDetailPage() {
       startBlocking("Classifying fields...");
       startLoading();
       const response = await axiosInstance.post<{ shapes: OcrShape[]; categories?: string[] }>(
-        `images/${img.id}/classify_kie/`,
+        `${imageEndpoint}/${img.id}/classify_kie/`,
         { shapes: shapesForImage, categories: kieCategories }
       );
       const classifiedShapes = response.data?.shapes || shapesForImage;
@@ -867,7 +869,7 @@ function ProjectDetailPage() {
       const img = images[currentIndex];
       if (img) {
         try {
-          await axiosInstance.delete(`images/${img.id}/ocr_annotations/`, {
+          await axiosInstance.delete(`${imageEndpoint}/${img.id}/ocr_annotations/`, {
             data: { ids: [] },
           });
         } catch (error) {
@@ -1293,7 +1295,7 @@ function ProjectDetailPage() {
                     if (!currentImage || !selectedShape) return;
                     const remaining = shapesForImage.filter((s) => s.id !== selectedShape.id);
                     try {
-                      await axiosInstance.delete(`images/${currentImage.id}/ocr_annotations/`, {
+                      await axiosInstance.delete(`${imageEndpoint}/${currentImage.id}/ocr_annotations/`, {
                         data: { ids: [selectedShape.id] },
                       });
                     } catch (error) {
