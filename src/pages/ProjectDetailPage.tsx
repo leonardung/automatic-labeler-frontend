@@ -878,8 +878,8 @@ function ProjectDetailPage() {
               <NavigationButtons
                 onPrev={handlePrevImage}
                 onNext={handleNextImage}
-                currentIndex={currentIndex}
-                total={images.length}
+                disablePrev={currentIndex === 0}
+                disableNext={currentIndex === images.length - 1}
                 disabled={isBlocked}
               />
               {isOcrProject ? (
@@ -914,7 +914,7 @@ function ProjectDetailPage() {
               ) : (
                   <Controls
                     onClearLabels={handleClearLabels}
-                    onPropagateMask={handlePropagateMask}
+                    onPropagate={handlePropagateMask}
                     disabled={isBlocked}
                     projectType={projectType}
                   />

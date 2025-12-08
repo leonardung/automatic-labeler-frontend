@@ -3,8 +3,7 @@ import {
   Box,
   Typography,
   List,
-  ListItem,
-  ListItemText,
+  ListItemButton,
   TextField,
   IconButton,
   Paper,
@@ -117,9 +116,8 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
           const isSelected = shape.id === selectedShapeId;
           return (
             <React.Fragment key={shape.id}>
-              <ListItem
+              <ListItemButton
                 alignItems="flex-start"
-                button
                 selected={isSelected}
                 onClick={() => onSelectShape(shape.id)}
                 sx={{
@@ -171,7 +169,7 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
                     margin="dense"
                   />
                 )}
-              </ListItem>
+              </ListItemButton>
               <Divider component="li" />
             </React.Fragment>
           );

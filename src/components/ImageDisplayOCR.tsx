@@ -56,10 +56,67 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     return { x, y };
   };
 
+  const updateLocalShape = (id: string, updates: Partial<OCRAnnotation>) => {
+      if (!onImageUpdated) return;
+      const newAnnotations = image.ocr_annotations?.map(s => s.id === id ? { ...s, ...updates } : s) || [];
+      onImageUpdated({ ...image, ocr_annotations: newAnnotations });
+  };
+
+  const saveShape = async (shape: Partial<OCRAnnotation>) => {
+    if (!image.id) return;
+    try {
+        // onStartBlocking?.("Saving annotation..."); // Optional: blocking might be too intrusive for every edit
+        const payload = {
+            shapes: [shape]
+        };
+        const response = await axiosInstance.post(`images/${image.id}/ocr_annotations/`, payload);
+        // The backend returns the saved shapes. We should merge them.
+        // However, for a single shape save, we might just want to append or update.
+        // Let's assume the backend returns the full list or we handle the merge.
+        // Actually, the view returns { shapes: [saved_shape] }
+        
+        const savedShapes = response.data.shapes as OCRAnnotation[];
+        const savedShape = savedShapes[0];
+        
+        let newAnnotations = [...(image.ocr_annotations || [])];
+        const existingIndex = newAnnotations.findIndex(s => s.id === savedShape.id);
+        if (existingIndex >= 0) {
+            newAnnotations[existingIndex] = savedShape;
+        } else {
+            newAnnotations.push(savedShape);
+        }
+        
+        if (onImageUpdated) {
+            onImageUpdated({ ...image, ocr_annotations: newAnnotations });
+        }
+        onSelectShape(savedShape.id);
+
+    } catch (error) {
+        console.error("Error saving shape:", error);
+    } finally {
+        // onStopBlocking?.();
+    }
+  };
+
+  const deleteShape = useCallback(async (id: string) => {
+      try {
+          await axiosInstance.delete(`images/${image.id}/delete_ocr_annotations/`, { data: { ids: [id] } });
+          const newAnnotations = image.ocr_annotations?.filter(s => s.id !== id) || [];
+          if (onImageUpdated) {
+              onImageUpdated({ ...image, ocr_annotations: newAnnotations });
+          }
+          if (selectedShapeId === id) {
+              onSelectShape(null);
+          }
+      } catch (error) {
+          console.error("Error deleting shape:", error);
+      }
+  }, [image.id, image.ocr_annotations, onImageUpdated, selectedShapeId, onSelectShape]);
+
   const handleMouseDown = (e: React.MouseEvent) => {
     if (disabled) return;
     if (ShiftKeyPress) {
-      handlePanMouseDown(e);
+      handlePanMouseDown(e as any);
       return;
     }
 
@@ -98,7 +155,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   const handleMouseMove = (e: React.MouseEvent) => {
     if (disabled) return;
     if (isPanning) {
-      handlePanMouseMove(e);
+      handlePanMouseMove(e as any);
       return;
     }
 
@@ -110,11 +167,6 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
       if (shape) {
         const newPoints = [...shape.points];
         newPoints[draggedPointIndex] = { x, y };
-        
-        // For rects, we need to maintain rectangularity if dragging corners
-        // This is a simplified implementation; a full rect editor would be more complex
-        // For now, let's just allow free movement for polygons, and maybe restrict rects later
-        // or just treat rects as polygons after creation for simplicity in editing
         
         updateLocalShape(selectedShapeId, { points: newPoints });
       }
@@ -165,63 +217,6 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
           };
           saveShape(newShape);
           setCurrentPoints([]);
-      }
-  };
-
-  const updateLocalShape = (id: string, updates: Partial<OCRAnnotation>) => {
-      if (!onImageUpdated) return;
-      const newAnnotations = image.ocr_annotations?.map(s => s.id === id ? { ...s, ...updates } : s) || [];
-      onImageUpdated({ ...image, ocr_annotations: newAnnotations });
-  };
-
-  const saveShape = async (shape: Partial<OCRAnnotation>) => {
-    if (!image.id) return;
-    try {
-        // onStartBlocking?.("Saving annotation..."); // Optional: blocking might be too intrusive for every edit
-        const payload = {
-            shapes: [shape]
-        };
-        const response = await axiosInstance.post(`images/${image.id}/ocr_annotations/`, payload);
-        // The backend returns the saved shapes. We should merge them.
-        // However, for a single shape save, we might just want to append or update.
-        // Let's assume the backend returns the full list or we handle the merge.
-        // Actually, the view returns { shapes: [saved_shape] }
-        
-        const savedShapes = response.data.shapes as OCRAnnotation[];
-        const savedShape = savedShapes[0];
-        
-        let newAnnotations = [...(image.ocr_annotations || [])];
-        const existingIndex = newAnnotations.findIndex(s => s.id === savedShape.id);
-        if (existingIndex >= 0) {
-            newAnnotations[existingIndex] = savedShape;
-        } else {
-            newAnnotations.push(savedShape);
-        }
-        
-        if (onImageUpdated) {
-            onImageUpdated({ ...image, ocr_annotations: newAnnotations });
-        }
-        onSelectShape(savedShape.id);
-
-    } catch (error) {
-        console.error("Error saving shape:", error);
-    } finally {
-        // onStopBlocking?.();
-    }
-  };
-
-  const deleteShape = async (id: string) => {
-      try {
-          await axiosInstance.delete(`images/${image.id}/delete_ocr_annotations/`, { data: { ids: [id] } });
-          const newAnnotations = image.ocr_annotations?.filter(s => s.id !== id) || [];
-          if (onImageUpdated) {
-              onImageUpdated({ ...image, ocr_annotations: newAnnotations });
-          }
-          if (selectedShapeId === id) {
-              onSelectShape(null);
-          }
-      } catch (error) {
-          console.error("Error deleting shape:", error);
       }
   };
 
