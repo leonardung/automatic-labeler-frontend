@@ -193,6 +193,9 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
       setCurrentPoints((prev) => [...prev, { x, y }]);
     } else if (activeTool === "select") {
       if (!draggedShapeId && !draggedPointIndex) {
+        if (e.ctrlKey || e.metaKey) {
+          return;
+        }
         setSelectionStart({ x, y });
         setSelectionPoint({ x, y });
         onSelectShapes([]);
@@ -362,7 +365,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   const renderHelperText = () => {
     if (activeTool === "rect") return "Click start and end points for rectangle.";
     if (activeTool === "polygon") return "Click points. Double click to finish.";
-    return "Click or drag to select. Drag to move. Drag corners to resize. Del to delete.";
+    return "Click or drag to select. Shift + Drag to move. Drag corners to resize. Del to delete.";
   };
 
   return (
@@ -424,7 +427,16 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
                   onMouseDown={(e) => {
                     if (activeTool === "select") {
                       e.stopPropagation();
-                      onSelectShapes([shape.id]);
+                      const toggle = e.ctrlKey || e.metaKey;
+                      let nextIds = selectedShapeIds;
+                      if (toggle) {
+                        nextIds = selectedShapeIds.includes(shape.id)
+                          ? selectedShapeIds.filter((id) => id !== shape.id)
+                          : [...selectedShapeIds, shape.id];
+                      } else {
+                        nextIds = [shape.id];
+                      }
+                      onSelectShapes(nextIds);
                       setDraggedShapeId(shape.id);
                       const { x, y } = screenToImage(e.clientX, e.clientY);
                       setDragStart({ x, y });

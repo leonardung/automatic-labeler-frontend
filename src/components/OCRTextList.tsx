@@ -175,7 +175,18 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
           return (
             <React.Fragment key={shape.id}>
               <ListItemButton
-                onClick={() => onSelectShapes([shape.id])}
+                onClick={(e) => {
+                  const toggle = e.ctrlKey || e.metaKey;
+                  if (toggle) {
+                    onSelectShapes(
+                      isSelected
+                        ? selectedShapeIds.filter((id) => id !== shape.id)
+                        : [...selectedShapeIds, shape.id]
+                    );
+                  } else {
+                    onSelectShapes([shape.id]);
+                  }
+                }}
                 selected={isSelected}
                 sx={{
                   display: "grid",
@@ -209,7 +220,6 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
                   value={shape.text}
                   onChange={(e) => handleTextChange(shape.id, e.target.value)}
                   onBlur={() => handleTextBlur(shape.id)}
-                  onFocus={() => onSelectShapes([shape.id])}
                   disabled={disabled}
                   sx={{
                     px: 1,
