@@ -12,8 +12,8 @@ interface ImageDisplayOCRProps {
   disabled?: boolean;
   activeTool: OCRTool;
   endpointBase: string;
-  selectedShapeId: string | null;
-  onSelectShape: (id: string | null) => void;
+  selectedShapeIds: string[];
+  onSelectShapes: (ids: string[]) => void;
   onStartBlocking?: (message?: string) => void;
   onStopBlocking?: () => void;
 }
@@ -23,8 +23,8 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   onImageUpdated,
   disabled,
   activeTool,
-  selectedShapeId,
-  onSelectShape,
+  selectedShapeIds,
+  onSelectShapes,
   onStartBlocking,
   onStopBlocking,
   endpointBase,
@@ -51,6 +51,8 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   const [didMove, setDidMove] = useState(false);
   const [rectPreviewPoint, setRectPreviewPoint] = useState<{ x: number; y: number } | null>(null);
   const [polygonPreviewPoint, setPolygonPreviewPoint] = useState<{ x: number; y: number } | null>(null);
+  const [selectionStart, setSelectionStart] = useState<{ x: number; y: number } | null>(null);
+  const [selectionPoint, setSelectionPoint] = useState<{ x: number; y: number } | null>(null);
   const clearDraftShape = useCallback(() => {
     setCurrentPoints([]);
     setRectPreviewPoint(null);
@@ -62,6 +64,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   }, []);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const primarySelectedId = selectedShapeIds[0] || null;
 
   const adjustRectPoints = (shape: OCRAnnotation, newCornerIndex: number, x: number, y: number) => {
     const oppositeIndex = (newCornerIndex + 2) % 4;
@@ -134,26 +137,26 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
       }
 
       onImageUpdated?.({ ...image, ocr_annotations: newAnnotations });
-      onSelectShape(savedShape?.id || null);
+      onSelectShapes(savedShape?.id ? [savedShape.id] : []);
     } catch (error) {
       console.error("Error saving shape:", error);
     }
   };
 
   const deleteShape = useCallback(
-    async (id: string) => {
+    async (ids: string[]) => {
+      if (!ids.length) return;
       try {
-        await axiosInstance.delete(`${endpointBase}/${image.id}/ocr_annotations/`, { data: { ids: [id] } });
-        const newAnnotations = image.ocr_annotations?.filter((s) => s.id !== id) || [];
+        await axiosInstance.delete(`${endpointBase}/${image.id}/ocr_annotations/`, { data: { ids } });
+        const toDelete = new Set(ids);
+        const newAnnotations = image.ocr_annotations?.filter((s) => !toDelete.has(s.id)) || [];
         onImageUpdated?.({ ...image, ocr_annotations: newAnnotations });
-        if (selectedShapeId === id) {
-          onSelectShape(null);
-        }
+        onSelectShapes([]);
       } catch (error) {
         console.error("Error deleting shape:", error);
       }
     },
-    [image.id, image.ocr_annotations, onImageUpdated, onSelectShape, selectedShapeId]
+    [image.id, image.ocr_annotations, onImageUpdated, onSelectShapes]
   );
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -190,7 +193,9 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
       setCurrentPoints((prev) => [...prev, { x, y }]);
     } else if (activeTool === "select") {
       if (!draggedShapeId && !draggedPointIndex) {
-        onSelectShape(null);
+        setSelectionStart({ x, y });
+        setSelectionPoint({ x, y });
+        onSelectShapes([]);
       }
     }
   };
@@ -204,6 +209,10 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
 
     const { x, y } = screenToImage(e.clientX, e.clientY);
 
+    if (activeTool === "select" && selectionStart) {
+      setSelectionPoint({ x, y });
+    }
+
     if (activeTool === "rect" && currentPoints.length === 1) {
       setRectPreviewPoint({ x, y });
     }
@@ -216,14 +225,14 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
       setPolygonPreviewPoint({ x, y });
     }
 
-    if (draggedPointIndex !== null && selectedShapeId) {
-      const shape = image.ocr_annotations?.find((s) => s.id === selectedShapeId);
+    if (draggedPointIndex !== null && primarySelectedId) {
+      const shape = image.ocr_annotations?.find((s) => s.id === primarySelectedId);
       if (shape) {
         const newPoints =
           shape.type === "rect"
             ? adjustRectPoints(shape as OCRAnnotation, draggedPointIndex, x, y)
             : shape.points.map((p, idx) => (idx === draggedPointIndex ? { x, y } : p));
-        updateLocalShape(selectedShapeId, { points: newPoints });
+        updateLocalShape(primarySelectedId, { points: newPoints });
         setDidMove(true);
       }
     } else if (draggedShapeId && dragStart) {
@@ -246,8 +255,30 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
       return;
     }
 
+    if (activeTool === "select" && selectionStart && selectionPoint) {
+      const selMinX = Math.min(selectionStart.x, selectionPoint.x);
+      const selMaxX = Math.max(selectionStart.x, selectionPoint.x);
+      const selMinY = Math.min(selectionStart.y, selectionPoint.y);
+      const selMaxY = Math.max(selectionStart.y, selectionPoint.y);
+      const ids =
+        image.ocr_annotations
+          ?.filter((shape) => {
+            const xs = shape.points.map((p) => p.x);
+            const ys = shape.points.map((p) => p.y);
+            const minX = Math.min(...xs);
+            const maxX = Math.max(...xs);
+            const minY = Math.min(...ys);
+            const maxY = Math.max(...ys);
+            const intersects =
+              selMaxX >= minX && selMinX <= maxX && selMaxY >= minY && selMinY <= maxY;
+            return intersects;
+          })
+          .map((s) => s.id) || [];
+      onSelectShapes(ids);
+    }
+
     if ((draggedPointIndex !== null || draggedShapeId) && didMove) {
-      const id = selectedShapeId || draggedShapeId;
+      const id = primarySelectedId || draggedShapeId;
       if (id) {
         const shape = image.ocr_annotations?.find((s) => s.id === id);
         if (shape) {
@@ -266,6 +297,8 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     if (activeTool !== "polygon") {
       setPolygonPreviewPoint(null);
     }
+    setSelectionStart(null);
+    setSelectionPoint(null);
   };
 
   const handleDoubleClick = () => {
@@ -289,23 +322,30 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     if (activeTool !== "polygon") {
       setPolygonPreviewPoint(null);
     }
+    if (activeTool !== "select") {
+      setSelectionStart(null);
+      setSelectionPoint(null);
+    }
   }, [activeTool]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         clearDraftShape();
+        setSelectionStart(null);
+        setSelectionPoint(null);
+        onSelectShapes([]);
         return;
       }
       if (e.key === "Delete" || e.key === "Backspace") {
-        if (selectedShapeId) {
-          deleteShape(selectedShapeId);
+        if (selectedShapeIds.length) {
+          deleteShape(selectedShapeIds);
         }
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedShapeId, deleteShape, clearDraftShape]);
+  }, [selectedShapeIds, deleteShape, clearDraftShape, onSelectShapes]);
 
   useEffect(() => {
     const handleDocMouseDown = (e: MouseEvent) => {
@@ -322,7 +362,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   const renderHelperText = () => {
     if (activeTool === "rect") return "Click start and end points for rectangle.";
     if (activeTool === "polygon") return "Click points. Double click to finish.";
-    return "Click to select. Drag to move. Drag corners to resize. Del to delete.";
+    return "Click or drag to select. Drag to move. Drag corners to resize. Del to delete.";
   };
 
   return (
@@ -372,7 +412,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
       >
         <g transform={`translate(${panOffset.x}, ${panOffset.y}) scale(${zoomLevel})`}>
           {image.ocr_annotations?.map((shape) => {
-            const isSelected = shape.id === selectedShapeId;
+            const isSelected = selectedShapeIds.includes(shape.id);
             const pointsStr = shape.points.map((p) => `${p.x},${p.y}`).join(" ");
             return (
               <g key={shape.id} style={{ pointerEvents: "all" }}>
@@ -384,7 +424,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
                   onMouseDown={(e) => {
                     if (activeTool === "select") {
                       e.stopPropagation();
-                      onSelectShape(shape.id);
+                      onSelectShapes([shape.id]);
                       setDraggedShapeId(shape.id);
                       const { x, y } = screenToImage(e.clientX, e.clientY);
                       setDragStart({ x, y });
@@ -448,6 +488,18 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
                 </>
               )}
             </g>
+          )}
+          {activeTool === "select" && selectionStart && selectionPoint && (
+            <rect
+              x={Math.min(selectionStart.x, selectionPoint.x)}
+              y={Math.min(selectionStart.y, selectionPoint.y)}
+              width={Math.abs(selectionStart.x - selectionPoint.x)}
+              height={Math.abs(selectionStart.y - selectionPoint.y)}
+              fill="rgba(96,165,250,0.15)"
+              stroke="rgba(96,165,250,0.8)"
+              strokeWidth={1 / zoomLevel}
+              strokeDasharray="4 3"
+            />
           )}
         </g>
       </svg>

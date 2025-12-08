@@ -18,9 +18,9 @@ import axiosInstance from "../axiosInstance";
 interface OCRTextListProps {
   image: ImageModel;
   categories: MaskCategory[];
-  selectedShapeId: string | null;
+  selectedShapeIds: string[];
   activeCategoryId: number | null;
-  onSelectShape: (id: string | null) => void;
+  onSelectShapes: (ids: string[]) => void;
   onImageUpdated: (image: ImageModel) => void;
   disabled?: boolean;
   endpointBase: string;
@@ -55,9 +55,9 @@ const readableTextColor = (bg: string) => {
 const OCRTextList: React.FC<OCRTextListProps> = ({
   image,
   categories,
-  selectedShapeId,
+  selectedShapeIds,
   activeCategoryId,
-  onSelectShape,
+  onSelectShapes,
   onImageUpdated,
   disabled,
   endpointBase,
@@ -109,8 +109,8 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
       });
       const newAnnotations = annotations.filter((s) => s.id !== id);
       onImageUpdated({ ...image, ocr_annotations: newAnnotations });
-      if (selectedShapeId === id) {
-        onSelectShape(null);
+      if (selectedShapeIds.includes(id)) {
+        onSelectShapes([]);
       }
     } catch (error) {
       console.error("Error deleting shape:", error);
@@ -167,7 +167,7 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
 
       <List sx={{ flexGrow: 1, overflowY: "auto", p: 0 }}>
         {annotations.map((shape, index) => {
-          const isSelected = shape.id === selectedShapeId;
+          const isSelected = selectedShapeIds.includes(shape.id);
           const matchesActiveCategory =
             activeCategoryId !== null &&
             categories.find((c) => c.id === activeCategoryId)?.name === shape.category;
@@ -175,7 +175,7 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
           return (
             <React.Fragment key={shape.id}>
               <ListItemButton
-                onClick={() => onSelectShape(shape.id)}
+                onClick={() => onSelectShapes([shape.id])}
                 selected={isSelected}
                 sx={{
                   display: "grid",
@@ -209,7 +209,7 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
                   value={shape.text}
                   onChange={(e) => handleTextChange(shape.id, e.target.value)}
                   onBlur={() => handleTextBlur(shape.id)}
-                  onFocus={() => onSelectShape(shape.id)}
+                  onFocus={() => onSelectShapes([shape.id])}
                   disabled={disabled}
                   sx={{
                     px: 1,

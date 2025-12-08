@@ -80,7 +80,7 @@ function ProjectDetailPage() {
   const modelLoadedRef = useRef(false);
   const projectType: ProjectType = project?.type || "segmentation";
   const [ocrTool, setOcrTool] = useState<OCRTool>("select");
-  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
+  const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
   const currentImage = images[currentIndex];
   const isSegmentationProject =
     projectType === "segmentation" || projectType === "video_tracking_segmentation";
@@ -232,7 +232,7 @@ function ProjectDetailPage() {
   }, [projectId]);
 
   useEffect(() => {
-    setSelectedShapeId(null);
+    setSelectedShapeIds([]);
     setOcrTool("select");
   }, [currentIndex, projectType]);
 
@@ -694,23 +694,22 @@ function ProjectDetailPage() {
     );
   }, [categories]);
   const applyCategoryToSelection = async (categoryId: number) => {
-    if (!isOCRProject || !currentImage || !selectedShapeId) return;
+    if (!isOCRProject || !currentImage || !selectedShapeIds.length) return;
     const category = categories.find((c) => c.id === categoryId);
     if (!category) return;
-    const targetAnnotation = currentImage.ocr_annotations?.find((s) => s.id === selectedShapeId);
-    if (!targetAnnotation) return;
-
-    const updatedShape = { ...targetAnnotation, category: category.name };
+    const selectedSet = new Set(selectedShapeIds);
+    const updatedAnnotations =
+      currentImage.ocr_annotations?.map((s) =>
+        selectedSet.has(s.id) ? { ...s, category: category.name } : s
+      ) || [];
     const updatedImage: ImageModel = {
       ...currentImage,
-      ocr_annotations: (currentImage.ocr_annotations || []).map((s) =>
-        s.id === updatedShape.id ? updatedShape : s
-      ),
+      ocr_annotations: updatedAnnotations,
     };
     handleImageUpdated(updatedImage);
     try {
       await axiosInstance.post(`${imageEndpointBase}/${currentImage.id}/ocr_annotations/`, {
-        shapes: [updatedShape],
+        shapes: updatedAnnotations.filter((a) => selectedSet.has(a.id)),
       });
     } catch (error) {
       console.error("Error applying category to annotation:", error);
@@ -772,7 +771,7 @@ function ProjectDetailPage() {
               }
             : prev
         );
-        setSelectedShapeId(null);
+        setSelectedShapeIds([]);
         setNotification({
           open: true,
           message: "OCR annotations cleared.",
@@ -1007,8 +1006,8 @@ function ProjectDetailPage() {
                       image={currentImage}
                       categories={categories}
                       activeCategoryId={activeCategoryId}
-                      selectedShapeId={selectedShapeId}
-                      onSelectShape={setSelectedShapeId}
+                      selectedShapeIds={selectedShapeIds}
+                      onSelectShapes={setSelectedShapeIds}
                       onImageUpdated={handleImageUpdated}
                       disabled={isBlocked}
                       endpointBase={imageEndpointBase}
@@ -1043,8 +1042,8 @@ function ProjectDetailPage() {
                       <ImageDisplayOCR
                         image={currentImage}
                         activeTool={ocrTool}
-                        selectedShapeId={selectedShapeId}
-                        onSelectShape={setSelectedShapeId}
+                        selectedShapeIds={selectedShapeIds}
+                        onSelectShapes={setSelectedShapeIds}
                         onImageUpdated={handleImageUpdated}
                         disabled={isBlocked}
                         onStartBlocking={startBlocking}
