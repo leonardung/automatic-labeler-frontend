@@ -457,10 +457,10 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
             const baseColor = hasCategory && rawColor ? rawColor : undefined;
             const fillColor = isSelected
               ? "rgba(0,255,0,0.50)"
-              : withAlpha(baseColor, 0.22);
+              : withAlpha(baseColor || "rgba(128,135,148,1)", hasCategory ? 0.32 : 0.08);
             const strokeColor = isSelected
               ? "rgba(0,128,0,0.85)"
-              : withAlpha(baseColor, 0.7);
+              : withAlpha(baseColor, 0.9);
             return (
               <g key={shape.id} style={{ pointerEvents: "all" }}>
                 <polygon
