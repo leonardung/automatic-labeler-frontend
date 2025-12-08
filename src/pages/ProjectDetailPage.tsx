@@ -46,6 +46,14 @@ interface NotificationState {
 
 type OCRTool = "rect" | "polygon" | "select";
 
+const normalizeOcrAnnotations = (annotations?: any[]) =>
+  (annotations || []).map((a) => ({
+    ...a,
+    id: typeof a.id === "string" ? a.id : String(a.id ?? ""),
+    type: a.type || a.shape_type || "rect",
+    points: a.points || [],
+  }));
+
 function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -177,7 +185,7 @@ function ProjectDetailPage() {
         ...m,
         mask: bustCache(m.mask),
       })),
-      ocr_annotations: img.ocr_annotations || [],
+      ocr_annotations: normalizeOcrAnnotations(img.ocr_annotations),
     }),
     [bustCache]
   );
@@ -669,7 +677,6 @@ function ProjectDetailPage() {
       const targetImage = currentImage;
       if (!targetImage) return;
       try {
-        startBlocking("Clearing OCR annotations...");
         await axiosInstance.delete(`${imageEndpointBase}/${targetImage.id}/ocr_annotations/`, {
           data: { ids: [] },
         });
@@ -701,8 +708,6 @@ function ProjectDetailPage() {
           message: "Failed to clear OCR annotations.",
           severity: "error",
         });
-      } finally {
-        stopBlocking();
       }
       return;
     }

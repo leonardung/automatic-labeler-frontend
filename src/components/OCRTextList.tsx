@@ -112,6 +112,7 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
       <List sx={{ flexGrow: 1, overflowY: "auto", p: 0 }}>
         {annotations.map((shape, index) => {
           const isSelected = shape.id === selectedShapeId;
+          const shapeType = (shape as any).type || (shape as any).shape_type || "";
           return (
             <React.Fragment key={shape.id}>
               <ListItemButton
@@ -127,7 +128,7 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
               >
                 <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
                   <Typography variant="caption" color="text.secondary">
-                    #{index + 1} ({shape.type})
+                    #{index + 1} ({shapeType})
                   </Typography>
                   <IconButton size="small" onClick={(e) => handleDelete(e, shape.id)} disabled={disabled}>
                     <DeleteIcon fontSize="small" />

@@ -48,6 +48,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   const [draggedPointIndex, setDraggedPointIndex] = useState<number | null>(null);
   const [draggedShapeId, setDraggedShapeId] = useState<string | null>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [didMove, setDidMove] = useState(false);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -68,7 +69,6 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   const saveShape = async (shape: Partial<OCRAnnotation>) => {
     if (!image.id) return;
     try {
-      onStartBlocking?.("Saving annotation...");
       const payload = { shapes: [shape] };
       const response = await axiosInstance.post(`${endpointBase}/${image.id}/ocr_annotations/`, payload);
       const savedShapes = (response.data.shapes as OCRAnnotation[]) || [];
@@ -86,8 +86,6 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
       onSelectShape(savedShape?.id || null);
     } catch (error) {
       console.error("Error saving shape:", error);
-    } finally {
-      onStopBlocking?.();
     }
   };
 
@@ -159,6 +157,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
         const newPoints = [...shape.points];
         newPoints[draggedPointIndex] = { x, y };
         updateLocalShape(selectedShapeId, { points: newPoints });
+        setDidMove(true);
       }
     } else if (draggedShapeId && dragStart) {
       const dx = x - dragStart.x;
@@ -168,6 +167,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
         const newPoints = shape.points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
         updateLocalShape(draggedShapeId, { points: newPoints });
         setDragStart({ x, y });
+        setDidMove(true);
       }
     }
   };
@@ -179,7 +179,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
       return;
     }
 
-    if (draggedPointIndex !== null || draggedShapeId) {
+    if ((draggedPointIndex !== null || draggedShapeId) && didMove) {
       const id = selectedShapeId || draggedShapeId;
       if (id) {
         const shape = image.ocr_annotations?.find((s) => s.id === id);
@@ -192,6 +192,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     setDraggedPointIndex(null);
     setDraggedShapeId(null);
     setDragStart(null);
+    setDidMove(false);
   };
 
   const handleDoubleClick = () => {
@@ -288,6 +289,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
                       setDraggedShapeId(shape.id);
                       const { x, y } = screenToImage(e.clientX, e.clientY);
                       setDragStart({ x, y });
+                      setDidMove(false);
                     }
                   }}
                 />
@@ -307,6 +309,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
                           e.stopPropagation();
                           setDraggedPointIndex(idx);
                           setDraggedShapeId(shape.id);
+                          setDidMove(false);
                         }
                       }}
                     />
