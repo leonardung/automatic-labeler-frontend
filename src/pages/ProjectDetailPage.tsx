@@ -15,10 +15,17 @@ import {
   DialogActions,
   TextField,
   CircularProgress,
+  List,
+  ListItemButton,
+  ListItemText,
+  Chip,
+  Paper,
+  Stack,
 } from "@mui/material";
 import type { AlertColor } from "@mui/material";
 
 import ImageDisplaySegmentation from "../components/ImageDisplaySegmentation";
+import ImageDisplayOCR from "../components/ImageDisplayOCR";
 import NavigationButtons from "../components/NavigationButtons";
 import Controls from "../components/Controls";
 import ThumbnailGrid from "../components/ThumbnailGrid";
@@ -28,6 +35,7 @@ import { AuthContext } from "../AuthContext";
 import type {
   ImageModel,
   MaskCategory,
+  OcrShape,
   Project,
   ProjectType,
   SegmentationPoint,
@@ -63,6 +71,7 @@ function ProjectDetailPage() {
   const [stride, setStride] = useState<number>(1);
   const modelLoadedRef = useRef(false);
   const projectType: ProjectType = project?.type || "segmentation";
+  const isOcrProject = projectType === "ocr" || projectType === "ocr_kie";
   const loading = loadingCounter > 0;
 
   const [blockingOps, setBlockingOps] = useState(0);
@@ -70,6 +79,11 @@ function ProjectDetailPage() {
   const isBlocked = blockingOps > 0;
   const [propagationProgress, setPropagationProgress] = useState(0);
   const [isPropagating, setIsPropagating] = useState(false);
+  const ocrSaveTimeoutRef = useRef<Record<number, number>>({});
+  const [ocrShapes, setOcrShapes] = useState<Record<number, OcrShape[]>>({});
+  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
+  const [kieCategories, setKieCategories] = useState<string[]>(["Name", "Date", "Total"]);
+  const [newKieCategory, setNewKieCategory] = useState("");
   const progressIntervalRef = useRef<number | null>(null);
   const isPollingProgressRef = useRef(false);
 
@@ -177,6 +191,14 @@ function ProjectDetailPage() {
         setCategories(response.data.categories || []);
         setProject({ ...response.data, images: decoratedImages });
         setImages(decoratedImages);
+        setOcrShapes(() => {
+          const next: Record<number, OcrShape[]> = {};
+          decoratedImages.forEach((img) => {
+            next[img.id] = (img as any).ocr_annotations || [];
+          });
+          return next;
+        });
+        setSelectedShapeId(null);
         setTimeout(() => {
           setImages((prev) => prev.map((img) => ({ ...img })));
         }, 0);
@@ -206,6 +228,28 @@ function ProjectDetailPage() {
   useEffect(() => () => {
     clearProgressPolling();
   }, [clearProgressPolling]);
+
+  useEffect(() => {
+    setOcrShapes((prev) => {
+      const next = { ...prev };
+      images.forEach((img) => {
+        if (!next[img.id]) {
+          next[img.id] = (img as any).ocr_annotations || [];
+        }
+      });
+      return next;
+    });
+  }, [images]);
+
+  useEffect(() => {
+    const img = images[currentIndex];
+    if (!img) return;
+    const shapesForImage = ocrShapes[img.id] || [];
+    const stillExists = shapesForImage.find((s) => s.id === selectedShapeId);
+    if (!stillExists) {
+      setSelectedShapeId(shapesForImage[0]?.id || null);
+    }
+  }, [currentIndex, images, ocrShapes, selectedShapeId]);
 
   useEffect(() => {
     const requiresModel =
@@ -375,6 +419,11 @@ function ProjectDetailPage() {
   const handleThumbnailClick = (index: number) => {
     if (isBlocked) return;
     setCurrentIndex(index);
+    const img = images[index];
+    if (img) {
+      const shapesForImage = ocrShapes[img.id] || [];
+      setSelectedShapeId(shapesForImage[0]?.id || null);
+    }
   };
 
   const handlePropagateMask = async () => {
@@ -517,6 +566,172 @@ function ProjectDetailPage() {
     }
   };
 
+  const updateOcrShapeState = (imageId: number, shapes: OcrShape[]) => {
+    setOcrShapes((prev) => ({ ...prev, [imageId]: shapes }));
+  };
+
+  const persistOcrShapes = useCallback(
+    async (imageId: number, shapes: OcrShape[]) => {
+      try {
+        const response = await axiosInstance.post<{ shapes: OcrShape[] }>(
+          `images/${imageId}/ocr_annotations/`,
+          { shapes }
+        );
+        const saved = response.data?.shapes || shapes;
+        updateOcrShapeState(imageId, saved);
+        if (imageId === images[currentIndex]?.id) {
+          if (!saved.length) {
+            setSelectedShapeId(null);
+          } else if (!selectedShapeId || !saved.some((s) => s.id === selectedShapeId)) {
+            setSelectedShapeId(saved[saved.length - 1].id);
+          }
+        }
+      } catch (error) {
+        console.error("Error saving OCR annotations:", error);
+        setNotification({
+          open: true,
+          message: "Failed to save OCR annotations.",
+          severity: "error",
+        });
+      }
+    },
+    [currentIndex, images, selectedShapeId]
+  );
+
+  const handleOcrShapesChanged = (imageId: number, updatedShapes: OcrShape[]) => {
+    updateOcrShapeState(imageId, updatedShapes);
+    if (ocrSaveTimeoutRef.current[imageId]) {
+      window.clearTimeout(ocrSaveTimeoutRef.current[imageId]);
+    }
+    ocrSaveTimeoutRef.current[imageId] = window.setTimeout(() => {
+      persistOcrShapes(imageId, updatedShapes);
+    }, 180);
+    if (images[currentIndex]?.id !== imageId) return;
+    if (!updatedShapes.length) {
+      setSelectedShapeId(null);
+      return;
+    }
+    if (!selectedShapeId || !updatedShapes.some((s) => s.id === selectedShapeId)) {
+      setSelectedShapeId(updatedShapes[updatedShapes.length - 1].id);
+    }
+  };
+
+  const handleDetectRegions = async () => {
+    if (isBlocked || !isOcrProject) return;
+    const img = images[currentIndex];
+    if (!img) return;
+    try {
+      startBlocking("Detecting regions...");
+      startLoading();
+      const response = await axiosInstance.post<{ shapes: OcrShape[] }>(
+        `images/${img.id}/detect_regions/`,
+        { mode: projectType }
+      );
+      const detectedShapes = response.data?.shapes || [];
+      updateOcrShapeState(img.id, detectedShapes);
+      setSelectedShapeId(detectedShapes[0]?.id || null);
+      setNotification({
+        open: true,
+        message: `Detected ${detectedShapes.length} region(s).`,
+        severity: "success",
+      });
+    } catch (error) {
+      console.error("Error detecting regions:", error);
+      setNotification({
+        open: true,
+        message: "Failed to detect regions.",
+        severity: "error",
+      });
+    } finally {
+      stopBlocking();
+      stopLoading();
+    }
+  };
+
+  const handleRecognizeText = async () => {
+    if (isBlocked || !isOcrProject) return;
+    const img = images[currentIndex];
+    if (!img) return;
+    const shapesForImage = ocrShapes[img.id] || [];
+    if (!shapesForImage.length) {
+      setNotification({
+        open: true,
+        message: "Add or detect a box before running OCR.",
+        severity: "info",
+      });
+      return;
+    }
+    try {
+      startBlocking("Running OCR...");
+      startLoading();
+      const response = await axiosInstance.post<{ shapes: OcrShape[] }>(
+        `images/${img.id}/recognize_text/`,
+        { shapes: shapesForImage }
+      );
+      const recognizedShapes = response.data?.shapes || shapesForImage;
+      updateOcrShapeState(img.id, recognizedShapes);
+      setNotification({
+        open: true,
+        message: "Recognized text for current boxes.",
+        severity: "success",
+      });
+    } catch (error) {
+      console.error("Error recognizing text:", error);
+      setNotification({
+        open: true,
+        message: "Failed to recognize text.",
+        severity: "error",
+      });
+    } finally {
+      stopBlocking();
+      stopLoading();
+    }
+  };
+
+  const handleClassifyKie = async () => {
+    if (isBlocked || projectType !== "ocr_kie") return;
+    const img = images[currentIndex];
+    if (!img) return;
+    const shapesForImage = ocrShapes[img.id] || [];
+    if (!shapesForImage.length) {
+      setNotification({
+        open: true,
+        message: "Add or detect boxes before classification.",
+        severity: "info",
+      });
+      return;
+    }
+    try {
+      startBlocking("Classifying fields...");
+      startLoading();
+      const response = await axiosInstance.post<{ shapes: OcrShape[]; categories?: string[] }>(
+        `images/${img.id}/classify_kie/`,
+        { shapes: shapesForImage, categories: kieCategories }
+      );
+      const classifiedShapes = response.data?.shapes || shapesForImage;
+      updateOcrShapeState(img.id, classifiedShapes);
+      const returnedCategories = response.data?.categories || [];
+      if (returnedCategories.length) {
+        setKieCategories((prev) => Array.from(new Set([...prev, ...returnedCategories])));
+      }
+      setNotification({
+        open: true,
+        message: "Updated categories from KIE model.",
+        severity: "success",
+      });
+    } catch (error) {
+      console.error("Error classifying KIE:", error);
+      setNotification({
+        open: true,
+        message: "Failed to classify fields.",
+        severity: "error",
+      });
+    } finally {
+      stopBlocking();
+      stopLoading();
+    }
+  };
+
   const handleImageUpdated = (updatedImage: ImageModel) => {
     const normalized = decorateImage(updatedImage);
     setImages((prev) =>
@@ -648,6 +863,32 @@ function ProjectDetailPage() {
 
   const handleClearLabels = async () => {
     if (isBlocked) return;
+    if (isOcrProject) {
+      const img = images[currentIndex];
+      if (img) {
+        try {
+          await axiosInstance.delete(`images/${img.id}/ocr_annotations/`, {
+            data: { ids: [] },
+          });
+        } catch (error) {
+          console.error("Error clearing OCR annotations:", error);
+        }
+      }
+      setOcrShapes((prev) => {
+        const cleared: Record<number, OcrShape[]> = {};
+        images.forEach((image) => {
+          cleared[image.id] = [];
+        });
+        return cleared;
+      });
+      setSelectedShapeId(null);
+      setNotification({
+        open: true,
+        message: "Cleared OCR annotations.",
+        severity: "info",
+      });
+      return;
+    }
     if (!project) return;
     try {
       await axiosInstance.delete(`projects/${project.id}/delete_masks/`);
@@ -689,6 +930,403 @@ function ProjectDetailPage() {
 
   const handleBackToRoot = () => {
     navigate("/");
+  };
+
+  const renderSegmentationWorkspace = () => (
+    <Box display="flex" flexDirection="column" flexGrow={1} height="100%" overflow="hidden">
+      <Box display="flex" flexGrow={1} overflow="hidden">
+        <Box
+          sx={{
+            flexShrink: 0,
+            width: 320,
+            minWidth: 260,
+            maxWidth: "50vw",
+            resize: "horizontal",
+            overflow: "auto",
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+            height: "100%",
+            p: 2,
+            backgroundColor: "#0f1624",
+            borderRight: "1px solid #1f2a3d",
+            boxShadow: "inset -1px 0 0 rgba(255,255,255,0.04)",
+          }}
+        >
+          <TextPromptMaskForm
+            disabled={images.length === 0 || isBlocked}
+            loading={promptLoading || loading || isBlocked}
+            onSubmit={handleGenerateFromPrompt}
+          />
+          <MaskCategoryPanel
+            categories={categories}
+            activeCategoryId={activeCategoryId}
+            onSelectCategory={handleSelectCategory}
+            onAddCategory={handleAddCategory}
+            onDeleteCategory={handleDeleteCategory}
+            onColorChange={handleColorChange}
+          />
+        </Box>
+        <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
+          <Box display="flex" flexGrow={1} overflow="hidden">
+            <Box flexGrow={1} display="flex" overflow="hidden">
+              <ImageDisplaySegmentation
+                image={images[currentIndex]}
+                categories={categories}
+                activeCategoryId={activeCategoryId}
+                highlightCategoryId={highlightCategoryId}
+                highlightSignal={highlightSignal}
+                onImageUpdated={handleImageUpdated}
+                onPointsUpdated={handlePointsUpdated}
+                disabled={isBlocked}
+                onStartBlocking={startBlocking}
+                onStopBlocking={stopBlocking}
+                onRequireCategory={() =>
+                  setNotification({
+                    open: true,
+                    message: "Create/select a category before adding points.",
+                    severity: "info",
+                  })
+                }
+              />
+            </Box>
+            <Box
+              width={80}
+              display="flex"
+              flexDirection="column"
+              justifyContent="center"
+              alignItems="flex-start"
+            >
+              <NavigationButtons
+                onPrev={handlePrevImage}
+                onNext={handleNextImage}
+                disablePrev={currentIndex === 0}
+                disableNext={currentIndex === images.length - 1}
+                disabled={isBlocked}
+              />
+              <Controls
+                projectType={projectType}
+                onPropagate={handlePropagateMask}
+                onClearLabels={handleClearLabels}
+                disabled={isBlocked}
+              />
+            </Box>
+          </Box>
+        </Box>
+      </Box>
+      <ThumbnailGrid
+        images={images}
+        onThumbnailClick={handleThumbnailClick}
+        currentIndex={currentIndex}
+      />
+    </Box>
+  );
+
+  const renderOcrWorkspace = () => {
+    const currentImage = images[currentIndex];
+    const shapesForImage = currentImage ? ocrShapes[currentImage.id] || [] : [];
+    const selectedShape = shapesForImage.find((s) => s.id === selectedShapeId) || null;
+
+    const updateSelectedShape = (updates: Partial<OcrShape>) => {
+      if (!currentImage || !selectedShape) return;
+      const updated = shapesForImage.map((s) =>
+        s.id === selectedShape.id ? { ...s, ...updates } : s
+      );
+      handleOcrShapesChanged(currentImage.id, updated);
+    };
+
+    const handleApplyCategory = (category: string) => {
+      if (!category) return;
+      if (!kieCategories.includes(category)) {
+        setKieCategories((prev) => [...prev, category]);
+      }
+      updateSelectedShape({ category });
+    };
+
+    return (
+      <Box display="flex" flexDirection="column" flexGrow={1} height="100%" overflow="hidden">
+        <Box display="flex" flexGrow={1} overflow="hidden">
+          <Paper
+            elevation={0}
+            sx={{
+              width: 360,
+              minWidth: 280,
+              maxWidth: "50vw",
+              flexShrink: 0,
+              p: 2,
+              pr: 1,
+              borderRadius: 0,
+              borderRight: "1px solid rgba(255,255,255,0.08)",
+              background: "linear-gradient(160deg, rgba(15,22,36,0.9), rgba(18,26,42,0.85))",
+              color: "white",
+            }}
+          >
+            <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+              <Box>
+                <Typography variant="h6" fontWeight={700}>
+                  OCR Workspace
+                </Typography>
+                <Typography variant="body2" color="rgba(255,255,255,0.7)">
+                  Draw boxes, edit text, and map categories.
+                </Typography>
+              </Box>
+              {projectType === "ocr_kie" && <Chip label="KIE" color="secondary" size="small" />}
+            </Box>
+
+            <Stack direction="row" spacing={1} mb={2} flexWrap="wrap">
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleDetectRegions}
+                disabled={isBlocked}
+              >
+                Detect Regions
+              </Button>
+              <Button
+                variant="outlined"
+                color="primary"
+                onClick={handleRecognizeText}
+                disabled={isBlocked}
+              >
+                Recognize Text
+              </Button>
+              {projectType === "ocr_kie" && (
+                <Button variant="outlined" color="secondary" onClick={handleClassifyKie} disabled={isBlocked}>
+                  Classify (KIE)
+                </Button>
+              )}
+              <Button variant="text" color="inherit" onClick={handleClearLabels} disabled={isBlocked}>
+                Clear All
+              </Button>
+            </Stack>
+
+            <Paper
+              variant="outlined"
+              sx={{
+                mb: 2,
+                p: 1.5,
+                backgroundColor: "rgba(255,255,255,0.02)",
+                borderColor: "rgba(255,255,255,0.08)",
+              }}
+            >
+              <Typography variant="subtitle2" gutterBottom>
+                Recognized Text
+              </Typography>
+              <List dense sx={{ maxHeight: 240, overflow: "auto" }}>
+                {shapesForImage.length === 0 && (
+                  <Typography variant="body2" color="rgba(255,255,255,0.65)">
+                    No boxes yet. Draw one or run detection.
+                  </Typography>
+                )}
+                {shapesForImage.map((shape, idx) => (
+                  <ListItemButton
+                    key={shape.id}
+                    selected={shape.id === selectedShapeId}
+                    onClick={() => setSelectedShapeId(shape.id)}
+                    sx={{
+                      borderRadius: 1,
+                      mb: 0.5,
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      backgroundColor:
+                        shape.id === selectedShapeId ? "rgba(90,216,255,0.12)" : "transparent",
+                    }}
+                  >
+                    <ListItemText
+                      primary={`Box ${idx + 1} • ${shape.type}`}
+                      secondary={
+                        <span style={{ color: "rgba(255,255,255,0.7)" }}>
+                          {shape.text || "No text yet"}
+                        </span>
+                      }
+                    />
+                    {shape.category && (
+                      <Chip
+                        label={shape.category}
+                        size="small"
+                        color="secondary"
+                        sx={{ ml: 1, textTransform: "capitalize" }}
+                      />
+                    )}
+                  </ListItemButton>
+                ))}
+              </List>
+            </Paper>
+
+            {selectedShape && (
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 1.5,
+                  backgroundColor: "rgba(255,255,255,0.02)",
+                  borderColor: "rgba(255,255,255,0.08)",
+                }}
+              >
+                <Typography variant="subtitle2" gutterBottom>
+                  Selected Box Details
+                </Typography>
+                <TextField
+                  label="Recognized text"
+                  value={selectedShape.text}
+                  onChange={(e) => updateSelectedShape({ text: e.target.value })}
+                  fullWidth
+                  margin="dense"
+                  multiline
+                  minRows={2}
+                  InputLabelProps={{ shrink: true }}
+                  variant="filled"
+                  sx={{
+                    backgroundColor: "rgba(255,255,255,0.04)",
+                    borderRadius: 1,
+                    input: { color: "white" },
+                  }}
+                />
+                {projectType === "ocr_kie" && (
+                  <TextField
+                    label="Category"
+                    value={selectedShape.category ?? ""}
+                    onChange={(e) => updateSelectedShape({ category: e.target.value })}
+                    fullWidth
+                    margin="dense"
+                    InputLabelProps={{ shrink: true }}
+                    variant="filled"
+                    sx={{
+                      backgroundColor: "rgba(255,255,255,0.04)",
+                      borderRadius: 1,
+                      input: { color: "white" },
+                    }}
+                  />
+                )}
+              </Paper>
+            )}
+
+            {projectType === "ocr_kie" && (
+              <Paper
+                variant="outlined"
+                sx={{
+                  mt: 2,
+                  p: 1.5,
+                  backgroundColor: "rgba(255,255,255,0.02)",
+                  borderColor: "rgba(255,255,255,0.08)",
+                }}
+              >
+                <Typography variant="subtitle2" gutterBottom>
+                  Categories
+                </Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  {kieCategories.map((cat) => (
+                    <Chip
+                      key={cat}
+                      label={cat}
+                      onClick={() => handleApplyCategory(cat)}
+                      color={selectedShape?.category === cat ? "secondary" : "default"}
+                      sx={{ mb: 1, textTransform: "capitalize" }}
+                    />
+                  ))}
+                </Stack>
+                <Stack direction="row" spacing={1} mt={1}>
+                  <TextField
+                    label="Add category"
+                    value={newKieCategory}
+                    onChange={(e) => setNewKieCategory(e.target.value)}
+                    fullWidth
+                    size="small"
+                    variant="filled"
+                    InputLabelProps={{ shrink: true }}
+                    sx={{
+                      backgroundColor: "rgba(255,255,255,0.04)",
+                      borderRadius: 1,
+                      input: { color: "white" },
+                    }}
+                  />
+                  <Button
+                    variant="contained"
+                    color="secondary"
+                    onClick={() => {
+                      const trimmed = newKieCategory.trim();
+                      if (!trimmed) return;
+                      setKieCategories((prev) =>
+                        prev.includes(trimmed) ? prev : [...prev, trimmed]
+                      );
+                      updateSelectedShape({ category: trimmed });
+                      setNewKieCategory("");
+                    }}
+                  >
+                    Add
+                  </Button>
+                </Stack>
+              </Paper>
+            )}
+          </Paper>
+
+          <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
+            <Box display="flex" alignItems="center" justifyContent="space-between" mb={1.5}>
+              <Typography variant="body2" color="text.secondary">
+                Click to draw rectangles or polygons. Select to move or resize.
+              </Typography>
+              <NavigationButtons
+                onPrev={handlePrevImage}
+                onNext={handleNextImage}
+                disablePrev={currentIndex === 0}
+                disableNext={currentIndex === images.length - 1}
+                disabled={isBlocked}
+              />
+            </Box>
+            <Box display="flex" flexGrow={1} overflow="hidden">
+              <Box flexGrow={1} minHeight={0}>
+                {currentImage && (
+                  <ImageDisplayOCR
+                    image={currentImage}
+                    shapes={shapesForImage}
+                    selectedShapeId={selectedShapeId}
+                    onShapesChange={handleOcrShapesChanged}
+                    onSelectShape={setSelectedShapeId}
+                    projectType={projectType}
+                    disabled={isBlocked}
+                  />
+                )}
+              </Box>
+              <Box width={110} pl={2} display="flex" flexDirection="column" gap={1}>
+                <Button
+                  variant="contained"
+                  color="secondary"
+                  onClick={async () => {
+                    if (!currentImage || !selectedShape) return;
+                    const remaining = shapesForImage.filter((s) => s.id !== selectedShape.id);
+                    try {
+                      await axiosInstance.delete(`images/${currentImage.id}/ocr_annotations/`, {
+                        data: { ids: [selectedShape.id] },
+                      });
+                    } catch (error) {
+                      console.error("Error deleting OCR annotation:", error);
+                    }
+                    handleOcrShapesChanged(currentImage.id, remaining);
+                  }}
+                  disabled={isBlocked || !selectedShape}
+                >
+                  Delete Box
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  onClick={() => {
+                    if (!currentImage || shapesForImage.length === 0) return;
+                    setSelectedShapeId(shapesForImage[0].id);
+                  }}
+                  disabled={isBlocked || shapesForImage.length === 0}
+                >
+                  First Box
+                </Button>
+              </Box>
+            </Box>
+          </Box>
+        </Box>
+        <ThumbnailGrid
+          images={images}
+          onThumbnailClick={handleThumbnailClick}
+          currentIndex={currentIndex}
+        />
+      </Box>
+    );
   };
 
   return (
@@ -818,93 +1456,7 @@ function ProjectDetailPage() {
       </Box>
       {loading && <LinearProgress />}
       {images.length > 0 ? (
-        <Box display="flex" flexDirection="column" flexGrow={1} height="100%" overflow="hidden">
-          <Box display="flex" flexGrow={1} overflow="hidden">
-            <Box
-              sx={{
-                flexShrink: 0,
-                width: 320,
-                minWidth: 260,
-                maxWidth: "50vw",
-                resize: "horizontal",
-                overflow: "auto",
-                display: "flex",
-                flexDirection: "column",
-                gap: 1,
-                height: "100%",
-                p: 2,
-                backgroundColor: "#0f1624",
-                borderRight: "1px solid #1f2a3d",
-                boxShadow: "inset -1px 0 0 rgba(255,255,255,0.04)",
-              }}
-            >
-              <TextPromptMaskForm
-                disabled={images.length === 0 || isBlocked}
-                loading={promptLoading || loading || isBlocked}
-                onSubmit={handleGenerateFromPrompt}
-              />
-              <MaskCategoryPanel
-                categories={categories}
-                activeCategoryId={activeCategoryId}
-                onSelectCategory={handleSelectCategory}
-                onAddCategory={handleAddCategory}
-                onDeleteCategory={handleDeleteCategory}
-                onColorChange={handleColorChange}
-              />
-            </Box>
-            <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
-              <Box display="flex" flexGrow={1} overflow="hidden">
-                <Box flexGrow={1} display="flex" overflow="hidden">
-                  <ImageDisplaySegmentation
-                    image={images[currentIndex]}
-                    categories={categories}
-                    activeCategoryId={activeCategoryId}
-                    highlightCategoryId={highlightCategoryId}
-                    highlightSignal={highlightSignal}
-                    onImageUpdated={handleImageUpdated}
-                    onPointsUpdated={handlePointsUpdated}
-                    disabled={isBlocked}
-                    onStartBlocking={startBlocking}
-                    onStopBlocking={stopBlocking}
-                    onRequireCategory={() =>
-                      setNotification({
-                        open: true,
-                        message: "Create/select a category before adding points.",
-                        severity: "info",
-                      })
-                    }
-                  />
-                </Box>
-                <Box
-                  width={80}
-                  display="flex"
-                  flexDirection="column"
-                  justifyContent="center"
-                  alignItems="flex-start"
-                >
-                  <NavigationButtons
-                    onPrev={handlePrevImage}
-                    onNext={handleNextImage}
-                    disablePrev={currentIndex === 0}
-                    disableNext={currentIndex === images.length - 1}
-                    disabled={isBlocked}
-                  />
-                  <Controls
-                    projectType={projectType}
-                    onPropagate={handlePropagateMask}
-                    onClearLabels={handleClearLabels}
-                    disabled={isBlocked}
-                  />
-                </Box>
-              </Box>
-            </Box>
-          </Box>
-          <ThumbnailGrid
-            images={images}
-            onThumbnailClick={handleThumbnailClick}
-            currentIndex={currentIndex}
-          />
-        </Box>
+        isOcrProject ? renderOcrWorkspace() : renderSegmentationWorkspace()
       ) : (
         <Typography variant="body1" color="text.secondary" align="center">
           No images loaded. Please upload images.

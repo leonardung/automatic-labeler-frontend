@@ -17,6 +17,8 @@ interface NewProjectPayload {
 const projectTypes: { value: ProjectType; label: string }[] = [
   { value: "segmentation", label: "Segmentation" },
   { value: "video_tracking_segmentation", label: "Video Tracking Segmentation" },
+  { value: "ocr", label: "OCR" },
+  { value: "ocr_kie", label: "OCR + KIE" },
 ];
 
 const ProjectPage: React.FC = () => {

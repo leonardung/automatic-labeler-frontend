@@ -1,9 +1,28 @@
-export type ProjectType = "segmentation" | "video_tracking_segmentation";
+export type ProjectType =
+  | "segmentation"
+  | "video_tracking_segmentation"
+  | "ocr"
+  | "ocr_kie";
 
 export interface MaskCategory {
   id: number;
   name: string;
   color: string;
+}
+
+export type OcrShapeType = "rect" | "polygon";
+
+export interface OcrPoint {
+  x: number;
+  y: number;
+}
+
+export interface OcrShape {
+  id: string;
+  type: OcrShapeType;
+  points: OcrPoint[];
+  text: string;
+  category?: string | null;
 }
 
 export interface SegmentationPoint {
