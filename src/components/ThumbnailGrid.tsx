@@ -17,7 +17,8 @@ const ThumbnailGrid: React.FC<ThumbnailGridProps> = ({
     <Box
       sx={{
         width: "100%",
-        height: "120px",
+        height: 130,
+        minHeight: 130,
         overflowX: "auto",
         overflowY: "hidden",
         display: "flex",
