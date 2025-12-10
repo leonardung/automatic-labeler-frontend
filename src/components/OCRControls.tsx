@@ -113,20 +113,26 @@ const OCRControls: React.FC<OCRControlsProps> = ({
   return (
     <>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mb: 1 }}>
-        <ButtonGroup variant="contained" aria-label="OCR actions" disabled={disabled}>
-          <Tooltip title="Detect text regions">
-            <Button startIcon={<AutoFixHighIcon />} onClick={handleDetectRegions}>
+        <ButtonGroup
+          variant="contained"
+          aria-label="OCR actions"
+          disabled={disabled}
+          fullWidth
+          sx={{ "& .MuiButton-root": { flex: 1 } }}
+        >
+          <Tooltip title="Detect text regions" placement="top" sx={{ flex: 1, display: "flex" }}>
+            <Button startIcon={<AutoFixHighIcon />} onClick={handleDetectRegions} sx={{ flex: 1 }}>
               Detect
             </Button>
           </Tooltip>
-          <Tooltip title="Recognize text in regions">
-            <Button startIcon={<TextFieldsIcon />} onClick={handleRecognizeText}>
+          <Tooltip title="Recognize text in regions" placement="top" sx={{ flex: 1, display: "flex" }}>
+            <Button startIcon={<TextFieldsIcon />} onClick={handleRecognizeText} sx={{ flex: 1 }}>
               Recognize
             </Button>
           </Tooltip>
           {projectType === "ocr_kie" && (
-            <Tooltip title="Classify regions (KIE)">
-              <Button startIcon={<CategoryIcon />} onClick={handleClassify}>
+            <Tooltip title="Classify regions (KIE)" placement="top" sx={{ flex: 1, display: "flex" }}>
+              <Button startIcon={<CategoryIcon />} onClick={handleClassify} sx={{ flex: 1 }}>
                 Classify
               </Button>
             </Tooltip>
