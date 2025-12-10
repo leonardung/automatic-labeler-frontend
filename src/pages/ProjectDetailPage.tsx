@@ -14,10 +14,17 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  DialogContentText,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemText,
+  IconButton,
   CircularProgress,
   ToggleButton,
   ToggleButtonGroup,
 } from "@mui/material";
+import DeleteIcon from "@mui/icons-material/Delete";
 import type { AlertColor } from "@mui/material";
 
 import ImageDisplaySegmentation from "../components/ImageDisplaySegmentation";
@@ -37,6 +44,7 @@ import type {
   Project,
   ProjectType,
   SegmentationPoint,
+  ProjectSnapshot,
 } from "../types";
 
 interface NotificationState {
@@ -87,6 +95,10 @@ function ProjectDetailPage() {
   const isOCRProject = projectType === "ocr" || projectType === "ocr_kie";
   const showOcrCategoryPanel = projectType === "ocr_kie";
   const imageEndpointBase = isOCRProject ? "ocr-images" : "images";
+  const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>([]);
+  const [loadDialogMode, setLoadDialogMode] = useState<"page" | "project" | null>(null);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [snapshotName, setSnapshotName] = useState("");
   const loading = loadingCounter > 0;
 
   const [blockingOps, setBlockingOps] = useState(0);
@@ -196,25 +208,81 @@ function ProjectDetailPage() {
     [bustCache]
   );
 
+  const applyProjectPayload = useCallback(
+    (payload: Project) => {
+      const decoratedImages = (payload.images || []).map(decorateImage);
+      const categoryList = payload.categories || [];
+
+      setProject({ ...payload, images: decoratedImages });
+      setImages(decoratedImages);
+      setCategories(categoryList);
+      setCurrentIndex((prevIndex) => {
+        if (!decoratedImages.length) return 0;
+        return Math.min(prevIndex, decoratedImages.length - 1);
+      });
+      setActiveCategoryId((prev) => {
+        const hasPrev = categoryList.some((c) => c.id === prev);
+        if (hasPrev) return prev;
+        return (
+          categoryList[0]?.id ||
+          decoratedImages[0]?.masks?.[0]?.category?.id ||
+          null
+        );
+      });
+      setHighlightCategoryId((prev) => {
+        const hasPrev = prev && categoryList.some((c) => c.id === prev);
+        return hasPrev ? prev : null;
+      });
+      setSelectedShapeIds([]);
+      setOcrTool("select");
+    },
+    [decorateImage]
+  );
+
+  const formatSnapshotLabel = useCallback((snapshot: ProjectSnapshot) => {
+    const title = (snapshot.name || "").trim();
+    if (title) return title;
+    return new Date(snapshot.created_at).toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }, []);
+
+  const formatSnapshotDate = useCallback((snapshot: ProjectSnapshot) => {
+    return new Date(snapshot.created_at).toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }, []);
+
+  const fetchSnapshots = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const response = await axiosInstance.get<{ snapshots?: ProjectSnapshot[] }>(
+        `projects/${projectId}/snapshots/`
+      );
+      setSnapshots(response.data.snapshots || []);
+    } catch (error) {
+      console.error("Error fetching snapshots:", error);
+    }
+  }, [projectId]);
+
   useEffect(() => {
     const fetchProject = async () => {
       if (!projectId) return;
       try {
         const response = await axiosInstance.get<Project>(`projects/${projectId}/`);
 
-        const decoratedImages = (response.data.images || []).map(decorateImage);
-        setCategories(response.data.categories || []);
-        setProject({ ...response.data, images: decoratedImages });
-        setImages(decoratedImages);
+        applyProjectPayload(response.data);
         setTimeout(() => {
           setImages((prev) => prev.map((img) => ({ ...img })));
         }, 0);
-        const initialCategory =
-          response.data.categories?.[0]?.id ||
-          decoratedImages[0]?.masks?.[0]?.category?.id ||
-          null;
-        setActiveCategoryId(initialCategory);
-        setHighlightCategoryId(initialCategory);
       } catch (error) {
         console.error("Error fetching project details:", error);
         setNotification({
@@ -226,7 +294,11 @@ function ProjectDetailPage() {
     };
 
     fetchProject();
-  }, [projectId, decorateImage]);
+  }, [projectId, applyProjectPayload]);
+
+  useEffect(() => {
+    fetchSnapshots();
+  }, [fetchSnapshots]);
 
   useEffect(() => {
     modelLoadedRef.current = false;
@@ -412,6 +484,7 @@ function ProjectDetailPage() {
 
     input.click();
   };
+
   const handleThumbnailClick = (index: number) => {
     if (isBlocked) return;
     setCurrentIndex(index);
@@ -477,6 +550,177 @@ function ProjectDetailPage() {
     } finally {
       clearProgressPolling();
       setIsPropagating(false);
+      stopBlocking();
+      stopLoading();
+    }
+  };
+
+  const handleSaveSnapshot = async (name?: string) => {
+    if (isBlocked || !projectId) return;
+    startBlocking("Saving project snapshot...");
+    startLoading();
+    try {
+      const response = await axiosInstance.post<{ snapshot: ProjectSnapshot }>(
+        `projects/${projectId}/snapshots/`,
+        { name: name || "" }
+      );
+      const savedSnapshot = response.data.snapshot;
+      if (savedSnapshot) {
+        setSnapshots((prev) => [
+          savedSnapshot,
+          ...prev.filter((snap) => snap.id !== savedSnapshot.id),
+        ]);
+        setNotification({
+          open: true,
+          message: `Saved snapshot (${formatSnapshotLabel(savedSnapshot)}).`,
+          severity: "success",
+        });
+      }
+    } catch (error) {
+      console.error("Error saving snapshot:", error);
+      setNotification({
+        open: true,
+        message: "Failed to save snapshot.",
+        severity: "error",
+      });
+    } finally {
+      stopBlocking();
+      stopLoading();
+    }
+  };
+
+  const handleLoadProjectSnapshot = async (snapshotId: number) => {
+    if (!projectId || isBlocked) return;
+    startBlocking("Loading project snapshot...");
+    startLoading();
+    try {
+      const response = await axiosInstance.post<{
+        project: Project;
+        snapshot?: ProjectSnapshot;
+      }>(`projects/${projectId}/snapshots/${snapshotId}/load_project/`);
+      if (response.data.project) {
+        applyProjectPayload(response.data.project);
+      }
+      if (response.data.snapshot) {
+        setNotification({
+          open: true,
+          message: `Loaded project snapshot (${formatSnapshotLabel(response.data.snapshot)}).`,
+          severity: "success",
+        });
+      }
+      setLoadDialogMode(null);
+    } catch (error) {
+      console.error("Error loading project snapshot:", error);
+      setNotification({
+        open: true,
+        message: "Failed to load project snapshot.",
+        severity: "error",
+      });
+    } finally {
+      stopBlocking();
+      stopLoading();
+    }
+  };
+
+  const handleLoadPageSnapshot = async (snapshotId: number) => {
+    if (!projectId || !currentImage || isBlocked) return;
+    startBlocking("Loading page snapshot...");
+    startLoading();
+    try {
+      const response = await axiosInstance.post<{
+        image?: ImageModel;
+        categories?: MaskCategory[];
+        snapshot?: ProjectSnapshot;
+      }>(`projects/${projectId}/snapshots/${snapshotId}/load_page/`, {
+        image_id: currentImage.id,
+      });
+      const updatedCategories = response.data.categories;
+      const updatedImage = response.data.image ? decorateImage(response.data.image) : null;
+
+      if (updatedCategories) {
+        setCategories(updatedCategories);
+      }
+      if (updatedImage) {
+        setImages((prev) =>
+          prev.map((img) => (img.id === updatedImage.id ? { ...img, ...updatedImage } : img))
+        );
+        setProject((prev) =>
+          prev
+            ? {
+                ...prev,
+                images: prev.images.map((img) =>
+                  img.id === updatedImage.id ? { ...img, ...updatedImage } : img
+                ),
+                categories: updatedCategories || prev.categories,
+              }
+            : prev
+        );
+        setActiveCategoryId((prev) => {
+          const categoryPool = updatedCategories || categories;
+          const hasPrev = categoryPool?.some((c) => c.id === prev);
+          if (hasPrev) return prev;
+          return (
+            categoryPool?.[0]?.id ||
+            updatedImage.masks?.[0]?.category?.id ||
+            null
+          );
+        });
+        setHighlightCategoryId((prev) => {
+          const categoryPool = updatedCategories || categories;
+          const hasPrev = prev && categoryPool?.some((c) => c.id === prev);
+          return hasPrev ? prev : null;
+        });
+      }
+      setSelectedShapeIds([]);
+      if (response.data.snapshot) {
+        setNotification({
+          open: true,
+          message: `Loaded page snapshot (${formatSnapshotLabel(response.data.snapshot)}).`,
+          severity: "success",
+        });
+      }
+      setLoadDialogMode(null);
+    } catch (error) {
+      console.error("Error loading page snapshot:", error);
+      setNotification({
+        open: true,
+        message: "Failed to load page snapshot.",
+        severity: "error",
+      });
+    } finally {
+      stopBlocking();
+      stopLoading();
+    }
+  };
+
+  const handleLoadSnapshot = (mode: "page" | "project", snapshotId: number) => {
+    if (mode === "project") {
+      handleLoadProjectSnapshot(snapshotId);
+    } else {
+      handleLoadPageSnapshot(snapshotId);
+    }
+  };
+
+  const handleDeleteSnapshot = async (snapshotId: number) => {
+    if (!projectId || isBlocked) return;
+    startBlocking("Deleting snapshot...");
+    startLoading();
+    try {
+      await axiosInstance.delete(`projects/${projectId}/snapshots/${snapshotId}/`);
+      setSnapshots((prev) => prev.filter((s) => s.id !== snapshotId));
+      setNotification({
+        open: true,
+        message: "Snapshot deleted.",
+        severity: "info",
+      });
+    } catch (error) {
+      console.error("Error deleting snapshot:", error);
+      setNotification({
+        open: true,
+        message: "Failed to delete snapshot.",
+        severity: "error",
+      });
+    } finally {
       stopBlocking();
       stopLoading();
     }
@@ -943,6 +1187,34 @@ function ProjectDetailPage() {
           </DialogActions>
         </Dialog>
 
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, ml: 2 }}>
+          <Button
+            variant="outlined"
+            color="secondary"
+            onClick={() => setLoadDialogMode("page")}
+            disabled={isBlocked || snapshots.length === 0 || !currentImage}
+          >
+            Load Page
+          </Button>
+          <Button
+            variant="outlined"
+            color="secondary"
+            onClick={() => setLoadDialogMode("project")}
+            disabled={isBlocked || snapshots.length === 0}
+          >
+            Load Project
+          </Button>
+          <Button
+            variant="contained"
+            color="secondary"
+            onClick={() => setSaveDialogOpen(true)}
+            disabled={isBlocked || !project}
+            sx={{ boxShadow: "0 10px 24px rgba(120,202,255,0.2)" }}
+          >
+            Save Project
+          </Button>
+        </Box>
+
         <Typography variant="h4" color="primary" fontWeight="bold" sx={{ ml: 4 }}>
           {project ? project.name : "Loading Project..."}
         </Typography>
@@ -1191,6 +1463,101 @@ function ProjectDetailPage() {
           No images loaded. Please upload images.
         </Typography>
       )}
+      <Dialog
+        open={Boolean(loadDialogMode)}
+        onClose={() => setLoadDialogMode(null)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>
+          {loadDialogMode === "project" ? "Load Project Snapshot" : "Load Page Snapshot"}
+        </DialogTitle>
+        <DialogContent dividers>
+          <DialogContentText sx={{ mb: 2 }}>
+            {loadDialogMode === "project"
+              ? "Apply a saved version to every page in this project."
+              : "Apply a saved version to the current page."}
+          </DialogContentText>
+          {snapshots.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No saved snapshots yet. Save a project first to see versions here.
+            </Typography>
+          ) : (
+            <List>
+              {snapshots.map((snap) => (
+                <ListItem key={snap.id} disablePadding>
+                  <ListItemButton
+                    onClick={() =>
+                      loadDialogMode && handleLoadSnapshot(loadDialogMode, snap.id)
+                    }
+                    disabled={isBlocked || (loadDialogMode === "page" && !currentImage)}
+                  >
+                    <ListItemText
+                      primary={formatSnapshotLabel(snap)}
+                      secondary={(snap.name || "").trim() ? formatSnapshotDate(snap) : undefined}
+                    />
+                    <Box display="flex" alignItems="center" gap={1}>
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          loadDialogMode && handleLoadSnapshot(loadDialogMode, snap.id);
+                        }}
+                        disabled={isBlocked || (loadDialogMode === "page" && !currentImage)}
+                      >
+                        Load
+                      </Button>
+                      <IconButton
+                        edge="end"
+                        aria-label="delete snapshot"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteSnapshot(snap.id);
+                        }}
+                        disabled={isBlocked}
+                        size="small"
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLoadDialogMode(null)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)}>
+        <DialogTitle>Save Project Snapshot</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 1 }}>
+            Optional: add a title for this version. Leave blank to use the timestamp.
+          </DialogContentText>
+          <TextField
+            label="Snapshot Title (optional)"
+            fullWidth
+            value={snapshotName}
+            onChange={(e) => setSnapshotName(e.target.value)}
+            autoFocus
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              const name = snapshotName.trim();
+              setSaveDialogOpen(false);
+              setSnapshotName("");
+              handleSaveSnapshot(name);
+            }}
+            variant="contained"
+          >
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
       <Snackbar
         open={notification.open}
         autoHideDuration={6000}

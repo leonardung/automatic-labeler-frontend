@@ -61,3 +61,10 @@ export interface Project {
   images: ImageModel[];
   categories: MaskCategory[];
 }
+
+export interface ProjectSnapshot {
+  id: number;
+  created_at: string;
+  name?: string;
+  label?: string;
+}
