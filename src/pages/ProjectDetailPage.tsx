@@ -100,6 +100,7 @@ function ProjectDetailPage() {
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [snapshotName, setSnapshotName] = useState("");
   const loading = loadingCounter > 0;
+  const ocrModelLoadedRef = useRef(false);
 
   const [blockingOps, setBlockingOps] = useState(0);
   const [blockingMessage, setBlockingMessage] = useState("Working...");
@@ -302,6 +303,7 @@ function ProjectDetailPage() {
 
   useEffect(() => {
     modelLoadedRef.current = false;
+    ocrModelLoadedRef.current = false;
   }, [projectId]);
 
   useEffect(() => {
@@ -344,6 +346,27 @@ function ProjectDetailPage() {
 
     loadModel();
   }, [project, projectType, projectId, startBlocking, stopBlocking, startLoading, stopLoading, isSegmentationProject]);
+
+  useEffect(() => {
+    if (!project || !isOCRProject || ocrModelLoadedRef.current) return;
+
+    const loadOcrModels = async () => {
+      try {
+        startBlocking("Loading OCR models...");
+        await axiosInstance.post(`ocr-images/configure_models/`, {
+          detect_model: "PP-OCRv5_mobile_det",
+          recognize_model: "PP-OCRv5_server_rec",
+        });
+        ocrModelLoadedRef.current = true;
+      } catch (error) {
+        console.error("Error loading OCR models:", error);
+      } finally {
+        stopBlocking();
+      }
+    };
+
+    loadOcrModels();
+  }, [project, isOCRProject, startBlocking, stopBlocking]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
