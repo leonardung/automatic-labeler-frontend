@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { forwardRef, useEffect, useState } from "react";
 import {
   Box,
   Typography,
@@ -84,7 +84,7 @@ const contrastText = (bg: string) => {
   return luminance > 0.6 ? "#0b1220" : "#ffffff";
 };
 
-const OcrCategoryPanel: React.FC<OcrCategoryPanelProps> = ({
+const OcrCategoryPanel = forwardRef<HTMLDivElement, OcrCategoryPanelProps>(({
   categories,
   activeCategoryId,
   onSelectCategory,
@@ -93,7 +93,7 @@ const OcrCategoryPanel: React.FC<OcrCategoryPanelProps> = ({
   onColorChange,
   onRenameCategory,
   disabled,
-}) => {
+}, ref) => {
   const [name, setName] = useState("");
   const [color, setColor] = useState(colorForIndex(categories.length || 0));
 
@@ -193,6 +193,7 @@ const OcrCategoryPanel: React.FC<OcrCategoryPanelProps> = ({
 
   return (
     <Box
+      ref={ref}
       sx={{
         p: 1.5,
         borderRadius: 2,
@@ -253,6 +254,8 @@ const OcrCategoryPanel: React.FC<OcrCategoryPanelProps> = ({
       </Box>
     </Box>
   );
-};
+});
+
+OcrCategoryPanel.displayName = "OcrCategoryPanel";
 
 export default OcrCategoryPanel;

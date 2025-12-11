@@ -95,6 +95,8 @@ function ProjectDetailPage() {
   const isOCRProject = projectType === "ocr" || projectType === "ocr_kie";
   const showOcrCategoryPanel = projectType === "ocr_kie";
   const imageEndpointBase = isOCRProject ? "ocr-images" : "images";
+  const [maxOcrCategoryHeight, setMaxOcrCategoryHeight] = useState<number>(320);
+  const ocrCategoryPanelRef = useRef<HTMLDivElement | null>(null);
   const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>([]);
   const [loadDialogMode, setLoadDialogMode] = useState<"page" | "project" | null>(null);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
@@ -315,6 +317,15 @@ function ProjectDetailPage() {
     setSelectedShapeIds([]);
     setOcrTool("select");
   }, [currentIndex, projectType]);
+
+  useEffect(() => {
+    if (!showOcrCategoryPanel) return;
+    const panel = ocrCategoryPanelRef.current;
+    if (!panel) return;
+    const contentHeight = panel.scrollHeight;
+    const bufferedHeight = contentHeight+5;
+    setMaxOcrCategoryHeight(Math.max(180, bufferedHeight));
+  }, [categories, showOcrCategoryPanel]);
 
   useEffect(() => () => {
     clearProgressPolling();
@@ -1472,14 +1483,14 @@ function ProjectDetailPage() {
                   <Box
                     sx={{
                       minHeight: 180,
-                      maxHeight: "55vh",
+                      maxHeight: maxOcrCategoryHeight,
                       resize: "vertical",
                       overflow: "auto",
                       flexShrink: 0,
-                      "& > *": { height: "100%" },
                     }}
                   >
                     <OcrCategoryPanel
+                      ref={ocrCategoryPanelRef}
                       categories={categories}
                       activeCategoryId={activeCategoryId}
                       onSelectCategory={handleSelectCategory}
@@ -1616,10 +1627,8 @@ function ProjectDetailPage() {
                   sx={{
                     minHeight: 180,
                     maxHeight: "55vh",
-                    resize: "vertical",
                     overflow: "auto",
                     flexShrink: 0,
-                    "& > *": { height: "100%" },
                   }}
                 >
                   <MaskCategoryPanel
