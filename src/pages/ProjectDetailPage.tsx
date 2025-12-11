@@ -107,6 +107,11 @@ function ProjectDetailPage() {
   const isBlocked = blockingOps > 0;
   const [propagationProgress, setPropagationProgress] = useState(0);
   const [isPropagating, setIsPropagating] = useState(false);
+  const [bulkOcrStatus, setBulkOcrStatus] = useState<Record<
+    number,
+    { status: "pending" | "detecting" | "recognizing" | "done" | "error"; error?: string }
+  >>({});
+  const [isBulkOcrRunning, setIsBulkOcrRunning] = useState(false);
   const progressIntervalRef = useRef<number | null>(null);
   const isPollingProgressRef = useRef(false);
 
@@ -367,40 +372,6 @@ function ProjectDetailPage() {
 
     loadOcrModels();
   }, [project, isOCRProject, startBlocking, stopBlocking]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const tagName = target?.tagName;
-      const isEditable =
-        tagName === "INPUT" ||
-        tagName === "TEXTAREA" ||
-        tagName === "SELECT" ||
-        target?.getAttribute("contenteditable") === "true";
-
-      if (isEditable || isBlocked) return;
-
-      if (event.key === "a") {
-        handlePrevImage();
-      } else if (event.key === "d") {
-        handleNextImage();
-      } else if (isOCRProject) {
-        const key = event.key.toLowerCase();
-        if (key === "s") {
-          setOcrTool("select");
-        } else if (key === "r") {
-          setOcrTool("rect");
-        } else if (key === "p") {
-          setOcrTool("polygon");
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [handleNextImage, handlePrevImage, isBlocked, isOCRProject]);
 
   const handleSelectFolder = async () => {
     if (isBlocked) return;
@@ -998,6 +969,147 @@ function ProjectDetailPage() {
     }
   };
 
+  const handleRecognizeSelected = useCallback(async () => {
+    if (isBlocked) return;
+    const image = images[currentIndex];
+    if (!image || !image.id) return;
+    const selected = (image.ocr_annotations || []).filter((shape) =>
+      selectedShapeIds.includes(shape.id)
+    );
+    if (selected.length === 0) return;
+
+    try {
+      startBlocking("Recognizing selection...");
+      const response = await axiosInstance.post(`${imageEndpointBase}/${image.id}/recognize_text/`, {
+        shapes: selected,
+      });
+      const updatedShapes = response.data.shapes || [];
+      const merged = (image.ocr_annotations || []).map((shape) => {
+        const replacement = updatedShapes.find((s: any) => s.id === shape.id);
+        return replacement ? replacement : shape;
+      });
+      const newOnes = updatedShapes.filter(
+        (s: any) => !(image.ocr_annotations || []).some((shape) => shape.id === s.id)
+      );
+      const updatedImage = { ...image, ocr_annotations: [...merged, ...newOnes] };
+      handleImageUpdated(updatedImage);
+    } catch (error) {
+      console.error("Error recognizing selected regions:", error);
+    } finally {
+      stopBlocking();
+    }
+  }, [
+    currentIndex,
+    imageEndpointBase,
+    images,
+    isBlocked,
+    selectedShapeIds,
+    startBlocking,
+    stopBlocking,
+    handleImageUpdated,
+  ]);
+
+  const handleBulkDetectRecognize = useCallback(async () => {
+    if (isBlocked) return;
+    const targets = images.filter((img) => img.id);
+    if (!targets.length) return;
+
+    setIsBulkOcrRunning(true);
+    setBulkOcrStatus(
+      targets.reduce(
+        (acc, img) => ({ ...acc, [img.id!]: { status: "pending" as const } }),
+        {}
+      )
+    );
+
+    startBlocking("Running OCR on all pages...");
+
+    try {
+      for (const img of targets) {
+        if (!img.id) continue;
+        setBulkOcrStatus((prev) => ({ ...prev, [img.id!]: { status: "detecting" } }));
+        let shapes: any[] = [];
+        try {
+          const detRes = await axiosInstance.post(
+            `${imageEndpointBase}/${img.id}/detect_regions/`
+          );
+          shapes = detRes.data.shapes || [];
+        } catch (error) {
+          console.error("Bulk detect failed for image", img.id, error);
+          setBulkOcrStatus((prev) => ({
+            ...prev,
+            [img.id!]: { status: "error", error: "detect failed" },
+          }));
+          continue;
+        }
+
+        setBulkOcrStatus((prev) => ({ ...prev, [img.id!]: { status: "recognizing" } }));
+        try {
+          const recRes = await axiosInstance.post(
+            `${imageEndpointBase}/${img.id}/recognize_text/`,
+            { shapes }
+          );
+          const recShapes = recRes.data.shapes || shapes;
+          handleImageUpdated({ ...img, ocr_annotations: recShapes });
+          setBulkOcrStatus((prev) => ({ ...prev, [img.id!]: { status: "done" } }));
+        } catch (error) {
+          console.error("Bulk recognize failed for image", img.id, error);
+          setBulkOcrStatus((prev) => ({
+            ...prev,
+            [img.id!]: { status: "error", error: "recognize failed" },
+          }));
+        }
+      }
+    } finally {
+      setIsBulkOcrRunning(false);
+      stopBlocking();
+    }
+  }, [
+    handleImageUpdated,
+    imageEndpointBase,
+    images,
+    isBlocked,
+    startBlocking,
+    stopBlocking,
+  ]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName;
+      const isEditable =
+        tagName === "INPUT" ||
+        tagName === "TEXTAREA" ||
+        tagName === "SELECT" ||
+        target?.getAttribute("contenteditable") === "true";
+
+      if (isEditable || isBlocked) return;
+
+      if (event.key === "a") {
+        handlePrevImage();
+      } else if (event.key === "d") {
+        handleNextImage();
+      } else if (isOCRProject) {
+        const key = event.key.toLowerCase();
+        if (key === "s") {
+          setOcrTool("select");
+        } else if (key === "r") {
+          setOcrTool("rect");
+        } else if (key === "p") {
+          setOcrTool("polygon");
+        } else if (key === "g") {
+          event.preventDefault();
+          handleRecognizeSelected();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [handleNextImage, handlePrevImage, isBlocked, isOCRProject, handleRecognizeSelected]);
+
   const handlePointsUpdated = (imageId: number, categoryId: number, points: SegmentationPoint[]) => {
     setImages((prev) =>
       prev.map((img) => {
@@ -1294,6 +1406,57 @@ function ProjectDetailPage() {
                     onStopBlocking={stopBlocking}
                     disabled={isBlocked}
                   />
+                )}
+                {isOCRProject && (
+                  <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                    <Button
+                      variant="outlined"
+                      color="secondary"
+                      onClick={handleBulkDetectRecognize}
+                      disabled={isBlocked || isBulkOcrRunning || images.length === 0}
+                    >
+                      Detect & Recognize All
+                    </Button>
+                    {Object.keys(bulkOcrStatus).length > 0 && (
+                      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                        {images.map((img) => {
+                          if (!img.id || !bulkOcrStatus[img.id]) return null;
+                          const status = bulkOcrStatus[img.id];
+                          const value =
+                            status.status === "pending"
+                              ? 0
+                              : status.status === "detecting"
+                              ? 40
+                              : status.status === "recognizing"
+                              ? 80
+                              : 100;
+                          const label =
+                            status.status === "done"
+                              ? "Done"
+                              : status.status === "error"
+                              ? status.error || "Error"
+                              : status.status === "recognizing"
+                              ? "Recognizing..."
+                              : status.status === "detecting"
+                              ? "Detecting..."
+                              : "Pending";
+                          const title = img.original_filename || `Image ${img.id}`;
+                          return (
+                            <Box key={img.id} sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
+                              <Typography variant="caption" color="text.secondary">
+                                {title}: {label}
+                              </Typography>
+                              <LinearProgress
+                                variant="determinate"
+                                value={value}
+                                color={status.status === "error" ? "error" : status.status === "done" ? "success" : "primary"}
+                              />
+                            </Box>
+                          );
+                        })}
+                      </Box>
+                    )}
+                  </Box>
                 )}
                 {showOcrCategoryPanel && (
                   <OcrCategoryPanel
