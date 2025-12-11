@@ -1256,16 +1256,66 @@ function ProjectDetailPage() {
           <Typography variant="body2" sx={{ opacity: 0.8 }}>
             Please wait...
           </Typography>
-          {isPropagating && (
-            <Box sx={{ width: 260, display: "flex", flexDirection: "column", gap: 1 }}>
+          {(isPropagating || isBulkOcrRunning) && (
+            <Box sx={{ width: 320, display: "flex", flexDirection: "column", gap: 1.25 }}>
               <LinearProgress
-                variant="determinate"
-                value={propagationProgress}
+                variant={isPropagating ? "determinate" : "indeterminate"}
+                value={isPropagating ? propagationProgress : undefined}
                 sx={{ width: "100%" }}
               />
               <Typography variant="caption" sx={{ textAlign: "center", color: "rgba(255,255,255,0.9)" }}>
-                Propagation {propagationProgress}% complete
+                {isPropagating ? `Propagation ${propagationProgress}% complete` : "Running OCR..."}
               </Typography>
+              {isBulkOcrRunning && Object.keys(bulkOcrStatus).length > 0 && (
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, mt: 0.5 }}>
+                  {images.map((img) => {
+                    if (!img.id || !bulkOcrStatus[img.id]) return null;
+                    const status = bulkOcrStatus[img.id];
+                    const value =
+                      status.status === "pending"
+                        ? 0
+                        : status.status === "detecting"
+                        ? 40
+                        : status.status === "recognizing"
+                        ? 80
+                        : 100;
+                    const label =
+                      status.status === "done"
+                        ? "Done"
+                        : status.status === "error"
+                        ? status.error || "Error"
+                        : status.status === "recognizing"
+                        ? "Recognizing..."
+                        : status.status === "detecting"
+                        ? "Detecting..."
+                        : "Pending";
+                    const title = img.original_filename || `Image ${img.id}`;
+                    return (
+                      <Box key={img.id} sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
+                        <Typography variant="caption" color="rgba(255,255,255,0.85)">
+                          {title}: {label}
+                        </Typography>
+                        <LinearProgress
+                          variant="determinate"
+                          value={value}
+                          color={
+                            status.status === "error"
+                              ? "error"
+                              : status.status === "done"
+                              ? "success"
+                              : "primary"
+                          }
+                          sx={{
+                            height: 6,
+                            borderRadius: 1,
+                            backgroundColor: "rgba(255,255,255,0.2)",
+                          }}
+                        />
+                      </Box>
+                    );
+                  })}
+                </Box>
+              )}
             </Box>
           )}
         </Box>
@@ -1408,55 +1458,15 @@ function ProjectDetailPage() {
                   />
                 )}
                 {isOCRProject && (
-                  <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                    <Button
-                      variant="outlined"
-                      color="secondary"
-                      onClick={handleBulkDetectRecognize}
-                      disabled={isBlocked || isBulkOcrRunning || images.length === 0}
-                    >
-                      Detect & Recognize All
-                    </Button>
-                    {Object.keys(bulkOcrStatus).length > 0 && (
-                      <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
-                        {images.map((img) => {
-                          if (!img.id || !bulkOcrStatus[img.id]) return null;
-                          const status = bulkOcrStatus[img.id];
-                          const value =
-                            status.status === "pending"
-                              ? 0
-                              : status.status === "detecting"
-                              ? 40
-                              : status.status === "recognizing"
-                              ? 80
-                              : 100;
-                          const label =
-                            status.status === "done"
-                              ? "Done"
-                              : status.status === "error"
-                              ? status.error || "Error"
-                              : status.status === "recognizing"
-                              ? "Recognizing..."
-                              : status.status === "detecting"
-                              ? "Detecting..."
-                              : "Pending";
-                          const title = img.original_filename || `Image ${img.id}`;
-                          return (
-                            <Box key={img.id} sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
-                              <Typography variant="caption" color="text.secondary">
-                                {title}: {label}
-                              </Typography>
-                              <LinearProgress
-                                variant="determinate"
-                                value={value}
-                                color={status.status === "error" ? "error" : status.status === "done" ? "success" : "primary"}
-                              />
-                            </Box>
-                          );
-                        })}
-                      </Box>
-                    )}
-                  </Box>
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    onClick={handleBulkDetectRecognize}
+                    disabled={isBlocked || isBulkOcrRunning || images.length === 0}
+                    sx={{ alignSelf: "flex-start" }}
+                  >
+                    Detect & Recognize All
+                  </Button>
                 )}
                 {showOcrCategoryPanel && (
                   <OcrCategoryPanel
