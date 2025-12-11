@@ -1469,21 +1469,42 @@ function ProjectDetailPage() {
                   </Button>
                 )}
                 {showOcrCategoryPanel && (
-                  <OcrCategoryPanel
-                    categories={categories}
-                    activeCategoryId={activeCategoryId}
-                    onSelectCategory={handleSelectCategory}
-                    onAddCategory={handleAddCategory}
-                    onDeleteCategory={handleDeleteCategory}
-                    onColorChange={handleColorChange}
-                    onRenameCategory={handleRenameCategory}
-                    disabled={isBlocked}
-                  />
+                  <Box
+                    sx={{
+                      minHeight: 180,
+                      maxHeight: "55vh",
+                      resize: "vertical",
+                      overflow: "auto",
+                      flexShrink: 0,
+                      "& > *": { height: "100%" },
+                    }}
+                  >
+                    <OcrCategoryPanel
+                      categories={categories}
+                      activeCategoryId={activeCategoryId}
+                      onSelectCategory={handleSelectCategory}
+                      onAddCategory={handleAddCategory}
+                      onDeleteCategory={handleDeleteCategory}
+                      onColorChange={handleColorChange}
+                      onRenameCategory={handleRenameCategory}
+                      disabled={isBlocked}
+                    />
+                  </Box>
                 )}
                 {currentImage && (
-                  <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-                      <OCRTextList
-                        image={currentImage}
+                  <Box
+                    sx={{
+                      minHeight: 240,
+                      maxHeight: "70vh",
+                      resize: "vertical",
+                      overflow: "hidden",
+                      flexGrow: 1,
+                      flexShrink: 0,
+                      "& > *": { height: "100%" },
+                    }}
+                  >
+                    <OCRTextList
+                      image={currentImage}
                       categories={categories}
                       activeCategoryId={activeCategoryId}
                       selectedShapeIds={selectedShapeIds}
@@ -1591,14 +1612,25 @@ function ProjectDetailPage() {
                   loading={promptLoading || loading || isBlocked}
                   onSubmit={handleGenerateFromPrompt}
                 />
-                <MaskCategoryPanel
-                  categories={categories}
-                  activeCategoryId={activeCategoryId}
-                  onSelectCategory={handleSelectCategory}
-                  onAddCategory={handleAddCategory}
-                  onDeleteCategory={handleDeleteCategory}
-                  onColorChange={handleColorChange}
-                />
+                <Box
+                  sx={{
+                    minHeight: 180,
+                    maxHeight: "55vh",
+                    resize: "vertical",
+                    overflow: "auto",
+                    flexShrink: 0,
+                    "& > *": { height: "100%" },
+                  }}
+                >
+                  <MaskCategoryPanel
+                    categories={categories}
+                    activeCategoryId={activeCategoryId}
+                    onSelectCategory={handleSelectCategory}
+                    onAddCategory={handleAddCategory}
+                    onDeleteCategory={handleDeleteCategory}
+                    onColorChange={handleColorChange}
+                  />
+                </Box>
               </Box>
               <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
                 <Box display="flex" flexGrow={1} overflow="hidden">
