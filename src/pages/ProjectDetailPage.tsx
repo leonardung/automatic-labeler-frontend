@@ -23,8 +23,11 @@ import {
   CircularProgress,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
+import UndoIcon from "@mui/icons-material/Undo";
+import RedoIcon from "@mui/icons-material/Redo";
 import type { AlertColor } from "@mui/material";
 
 import ImageDisplaySegmentation from "../components/ImageDisplaySegmentation";
@@ -41,6 +44,7 @@ import { AuthContext } from "../AuthContext";
 import type {
   ImageModel,
   MaskCategory,
+  OCRAnnotation,
   Project,
   ProjectType,
   SegmentationPoint,
@@ -54,6 +58,37 @@ interface NotificationState {
 }
 
 type OCRTool = "rect" | "polygon" | "select";
+type OcrHistoryEntry = { past: OCRAnnotation[][]; future: OCRAnnotation[][] };
+
+const cloneOcrAnnotations = (annotations: OCRAnnotation[] = []) =>
+  annotations.map((ann) => ({
+    ...ann,
+    points: ann.points.map((p) => ({ ...p })),
+  }));
+
+const areOcrAnnotationsEqual = (a: OCRAnnotation[] = [], b: OCRAnnotation[] = []) => {
+  if (a.length !== b.length) return false;
+  const sortedA = [...a].sort((x, y) => x.id.localeCompare(y.id));
+  const sortedB = [...b].sort((x, y) => x.id.localeCompare(y.id));
+
+  return sortedA.every((ann, idx) => {
+    const other = sortedB[idx];
+    if (!other) return false;
+    if (
+      ann.id !== other.id ||
+      ann.type !== other.type ||
+      ann.text !== other.text ||
+      ann.category !== other.category
+    ) {
+      return false;
+    }
+    if (ann.points.length !== other.points.length) return false;
+    return ann.points.every((pt, ptIdx) => {
+      const otherPt = other.points[ptIdx];
+      return Boolean(otherPt) && pt.x === otherPt.x && pt.y === otherPt.y;
+    });
+  });
+};
 
 const normalizeOcrAnnotations = (annotations?: any[]) =>
   (annotations || []).map((a) => ({
@@ -103,6 +138,12 @@ function ProjectDetailPage() {
   const [snapshotName, setSnapshotName] = useState("");
   const loading = loadingCounter > 0;
   const ocrModelLoadedRef = useRef(false);
+  const [ocrHistory, setOcrHistory] = useState<Record<number, OcrHistoryEntry>>({});
+  const suppressOcrHistoryRef = useRef(false);
+  const [isApplyingHistory, setIsApplyingHistory] = useState(false);
+  const currentHistory = currentImage ? ocrHistory[currentImage.id] : undefined;
+  const canUndo = Boolean(currentHistory?.past.length);
+  const canRedo = Boolean(currentHistory?.future.length);
 
   const [blockingOps, setBlockingOps] = useState(0);
   const [blockingMessage, setBlockingMessage] = useState("Working...");
@@ -136,6 +177,26 @@ function ProjectDetailPage() {
       progressIntervalRef.current = null;
     }
   }, []);
+
+  const recordOcrHistory = useCallback(
+    (imageId: number, previous: OCRAnnotation[], next: OCRAnnotation[]) => {
+      if (suppressOcrHistoryRef.current) return;
+      if (areOcrAnnotationsEqual(previous, next)) return;
+      setOcrHistory((prev) => {
+        const entry = prev[imageId] || { past: [], future: [] };
+        const snapshot = cloneOcrAnnotations(previous);
+        const last = entry.past[entry.past.length - 1];
+        if (last && areOcrAnnotationsEqual(last, snapshot)) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [imageId]: { past: [...entry.past, snapshot], future: [] },
+        };
+      });
+    },
+    []
+  );
 
   const pollPropagationProgress = useCallback(async () => {
     if (!projectId || isPollingProgressRef.current) return;
@@ -311,6 +372,10 @@ function ProjectDetailPage() {
   useEffect(() => {
     modelLoadedRef.current = false;
     ocrModelLoadedRef.current = false;
+  }, [projectId]);
+
+  useEffect(() => {
+    setOcrHistory({});
   }, [projectId]);
 
   useEffect(() => {
@@ -806,24 +871,90 @@ function ProjectDetailPage() {
     }
   };
 
-  const handleImageUpdated = (updatedImage: ImageModel) => {
-    const normalized = decorateImage(updatedImage);
-    setImages((prev) =>
-      prev.map((img) =>
-        img.id === normalized.id ? { ...img, ...normalized } : img
-      )
-    );
-    setProject((prev) =>
-      prev
-        ? {
-            ...prev,
-            images: prev.images.map((img) =>
-              img.id === normalized.id ? { ...img, ...normalized } : img
-            ),
+  const handleImageUpdated = useCallback(
+    (updatedImage: ImageModel) => {
+      const normalized = decorateImage(updatedImage);
+      let previousAnnotations: OCRAnnotation[] | null = null;
+      const nextAnnotations = normalized.ocr_annotations;
+      setImages((prev) =>
+        prev.map((img) => {
+          if (img.id !== normalized.id) return img;
+          if (
+            isOCRProject &&
+            !suppressOcrHistoryRef.current &&
+            typeof nextAnnotations !== "undefined"
+          ) {
+            previousAnnotations = cloneOcrAnnotations(img.ocr_annotations || []);
           }
-        : prev
-    );
-  };
+          return { ...img, ...normalized };
+        })
+      );
+      setProject((prev) =>
+        prev
+          ? {
+              ...prev,
+              images: prev.images.map((img) =>
+                img.id === normalized.id ? { ...img, ...normalized } : img
+              ),
+            }
+          : prev
+      );
+
+      if (
+        isOCRProject &&
+        !suppressOcrHistoryRef.current &&
+        previousAnnotations !== null &&
+        typeof nextAnnotations !== "undefined"
+      ) {
+        recordOcrHistory(normalized.id, previousAnnotations, nextAnnotations || []);
+      }
+    },
+    [decorateImage, isOCRProject, recordOcrHistory]
+  );
+
+  const applyOcrAnnotationsForImage = useCallback(
+    async (image: ImageModel, targetAnnotations: OCRAnnotation[]) => {
+      if (!isOCRProject || !image.id) return;
+      const safeAnnotations = cloneOcrAnnotations(targetAnnotations);
+      suppressOcrHistoryRef.current = true;
+      try {
+        handleImageUpdated({ ...image, ocr_annotations: safeAnnotations });
+      } finally {
+        suppressOcrHistoryRef.current = false;
+      }
+      setSelectedShapeIds((prev) => {
+        const allowed = new Set(safeAnnotations.map((ann) => ann.id));
+        return prev.filter((id) => allowed.has(id));
+      });
+      try {
+        const existing = image.ocr_annotations || [];
+        const targetIds = new Set(safeAnnotations.map((ann) => ann.id));
+        const idsToDelete = existing.filter((ann) => !targetIds.has(ann.id)).map((ann) => ann.id);
+        if (idsToDelete.length) {
+          await axiosInstance.delete(`${imageEndpointBase}/${image.id}/ocr_annotations/`, {
+            data: { ids: idsToDelete },
+          });
+        }
+        if (safeAnnotations.length) {
+          await axiosInstance.post(`${imageEndpointBase}/${image.id}/ocr_annotations/`, {
+            shapes: safeAnnotations,
+          });
+        } else {
+          await axiosInstance.delete(`${imageEndpointBase}/${image.id}/ocr_annotations/`, {
+            data: { ids: [] },
+          });
+        }
+      } catch (error) {
+        console.error("Error syncing OCR changes:", error);
+        setNotification({
+          open: true,
+          message: "Failed to sync OCR changes.",
+          severity: "error",
+        });
+      }
+    },
+    [handleImageUpdated, imageEndpointBase, isOCRProject]
+  );
 
   const handleAddCategory = async (name: string, color: string) => {
     if (isBlocked) return;
@@ -980,6 +1111,62 @@ function ProjectDetailPage() {
     }
   };
 
+  const handleUndo = useCallback(async () => {
+    const image = currentImage;
+    if (!isOCRProject || !image || isBlocked || isApplyingHistory) return;
+    const entry = ocrHistory[image.id] || { past: [], future: [] };
+    if (!entry.past.length) return;
+    const currentSnapshot = cloneOcrAnnotations(image.ocr_annotations || []);
+    let previousSnapshot: OCRAnnotation[] | null = null;
+    setOcrHistory((prev) => {
+      const state = prev[image.id] || { past: [], future: [] };
+      if (!state.past.length) return prev;
+      previousSnapshot = state.past[state.past.length - 1];
+      return {
+        ...prev,
+        [image.id]: {
+          past: state.past.slice(0, -1),
+          future: [...state.future, currentSnapshot],
+        },
+      };
+    });
+    if (!previousSnapshot) return;
+    setIsApplyingHistory(true);
+    try {
+      await applyOcrAnnotationsForImage(image, cloneOcrAnnotations(previousSnapshot));
+    } finally {
+      setIsApplyingHistory(false);
+    }
+  }, [applyOcrAnnotationsForImage, currentImage, isApplyingHistory, isBlocked, isOCRProject, ocrHistory]);
+
+  const handleRedo = useCallback(async () => {
+    const image = currentImage;
+    if (!isOCRProject || !image || isBlocked || isApplyingHistory) return;
+    const entry = ocrHistory[image.id] || { past: [], future: [] };
+    if (!entry.future.length) return;
+    const currentSnapshot = cloneOcrAnnotations(image.ocr_annotations || []);
+    let nextSnapshot: OCRAnnotation[] | null = null;
+    setOcrHistory((prev) => {
+      const state = prev[image.id] || { past: [], future: [] };
+      if (!state.future.length) return prev;
+      nextSnapshot = state.future[state.future.length - 1];
+      return {
+        ...prev,
+        [image.id]: {
+          past: [...state.past, currentSnapshot],
+          future: state.future.slice(0, -1),
+        },
+      };
+    });
+    if (!nextSnapshot) return;
+    setIsApplyingHistory(true);
+    try {
+      await applyOcrAnnotationsForImage(image, cloneOcrAnnotations(nextSnapshot));
+    } finally {
+      setIsApplyingHistory(false);
+    }
+  }, [applyOcrAnnotationsForImage, currentImage, isApplyingHistory, isBlocked, isOCRProject, ocrHistory]);
+
   const handleRecognizeSelected = useCallback(async () => {
     if (isBlocked) return;
     const image = images[currentIndex];
@@ -1096,19 +1283,36 @@ function ProjectDetailPage() {
 
       if (isEditable || isBlocked) return;
 
+      const ctrlOrMeta = event.ctrlKey || event.metaKey;
+      const keyLower = event.key.toLowerCase();
+
+      if (isOCRProject && ctrlOrMeta && keyLower === "z") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+        return;
+      }
+      if (isOCRProject && ctrlOrMeta && keyLower === "y") {
+        event.preventDefault();
+        handleRedo();
+        return;
+      }
+
       if (event.key === "a") {
         handlePrevImage();
       } else if (event.key === "d") {
         handleNextImage();
       } else if (isOCRProject) {
-        const key = event.key.toLowerCase();
-        if (key === "s") {
+        if (keyLower === "s") {
           setOcrTool("select");
-        } else if (key === "r") {
+        } else if (keyLower === "r") {
           setOcrTool("rect");
-        } else if (key === "p") {
+        } else if (keyLower === "p") {
           setOcrTool("polygon");
-        } else if (key === "g") {
+        } else if (keyLower === "g") {
           event.preventDefault();
           handleRecognizeSelected();
         }
@@ -1119,7 +1323,15 @@ function ProjectDetailPage() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handleNextImage, handlePrevImage, isBlocked, isOCRProject, handleRecognizeSelected]);
+  }, [
+    handleNextImage,
+    handlePrevImage,
+    handleRedo,
+    handleRecognizeSelected,
+    handleUndo,
+    isBlocked,
+    isOCRProject,
+  ]);
 
   const handlePointsUpdated = (imageId: number, categoryId: number, points: SegmentationPoint[]) => {
     setImages((prev) =>
@@ -1152,6 +1364,11 @@ function ProjectDetailPage() {
     if (isOCRProject) {
       const targetImage = currentImage;
       if (!targetImage) return;
+      recordOcrHistory(
+        targetImage.id,
+        cloneOcrAnnotations(targetImage.ocr_annotations || []),
+        []
+      );
       try {
         await axiosInstance.delete(`${imageEndpointBase}/${targetImage.id}/ocr_annotations/`, {
           data: { ids: [] },
@@ -1549,6 +1766,34 @@ function ProjectDetailPage() {
                     <ToggleButton value="rect">Rect (R)</ToggleButton>
                     <ToggleButton value="polygon">Polygon (P)</ToggleButton>
                   </ToggleButtonGroup>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Tooltip title="Undo (Ctrl+Z)">
+                      <span>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<UndoIcon />}
+                          onClick={handleUndo}
+                          disabled={!canUndo || isBlocked || isApplyingHistory}
+                        >
+                          Undo
+                        </Button>
+                      </span>
+                    </Tooltip>
+                    <Tooltip title="Redo (Ctrl+Y / Ctrl+Shift+Z)">
+                      <span>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<RedoIcon />}
+                          onClick={handleRedo}
+                          disabled={!canRedo || isBlocked || isApplyingHistory}
+                        >
+                          Redo
+                        </Button>
+                      </span>
+                    </Tooltip>
+                  </Box>
                 </Box>
                 <Box display="flex" flexGrow={1} overflow="hidden">
                   <Box flexGrow={1} display="flex" overflow="hidden">
