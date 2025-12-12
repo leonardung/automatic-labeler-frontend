@@ -45,6 +45,25 @@ const theme = createTheme({
         "*, *::before, *::after": {
           boxSizing: "border-box",
         },
+        "*": {
+          scrollbarColor: "#1f2a3d #0b1020",
+          scrollbarWidth: "thin",
+        },
+        "*::-webkit-scrollbar": {
+          width: 10,
+          height: 10,
+        },
+        "*::-webkit-scrollbar-track": {
+          backgroundColor: "#0b1020",
+        },
+        "*::-webkit-scrollbar-thumb": {
+          backgroundColor: "#1f2a3d",
+          borderRadius: 999,
+          border: "2px solid #0b1020",
+        },
+        "*::-webkit-scrollbar-thumb:hover": {
+          backgroundColor: "#2b3a53",
+        },
       },
     },
     MuiCard: {
