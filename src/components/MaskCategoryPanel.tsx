@@ -228,13 +228,25 @@ function MaskCategoryPanel({
         p: 2,
         borderTop: "1px solid #1f2a3d",
         height: "100%",
+        minHeight: 0,
+        display: "flex",
+        flexDirection: "column",
         boxSizing: "border-box",
         backgroundColor: "transparent",
         color: "white",
+        overflow: "hidden",
       }}
     >
       <Typography variant="h6" sx={{ mb: 1, color: "white" }}>Mask Categories</Typography>
-      <List dense sx={{ maxHeight: "60vh", overflowY: "auto", pr: 1 }}>
+      <List
+        dense
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          pr: 1,
+        }}
+      >
         {categories.map((category) => renderCategory(category))}
       </List>
       <TextField

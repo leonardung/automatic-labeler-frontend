@@ -1607,11 +1607,12 @@ function ProjectDetailPage() {
                   minWidth: 300,
                   maxWidth: "50vw",
                   resize: "horizontal",
-                  overflow: "auto",
+                  overflow: "hidden",
                   display: "flex",
                   flexDirection: "column",
                   gap: 1,
                   height: "100%",
+                  minHeight: 0,
                   p: 2,
                   backgroundColor: "#0f1624",
                   borderRight: "1px solid #1f2a3d",
@@ -1626,9 +1627,10 @@ function ProjectDetailPage() {
                 <Box
                   sx={{
                     minHeight: 180,
-                    maxHeight: "55vh",
-                    overflow: "auto",
-                    flexShrink: 0,
+                    flexGrow: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    overflow: "hidden",
                   }}
                 >
                   <MaskCategoryPanel
