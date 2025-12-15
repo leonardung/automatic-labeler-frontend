@@ -112,6 +112,7 @@ export interface TrainingJob {
   status: TrainingJobStatus;
   message: string;
   error?: string | null;
+  logs?: string;
   targets: TrainingModelKey[];
   started_at?: string;
   finished_at?: string | null;

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -80,6 +80,8 @@ function ModelTrainingDialog({
   const [activeJob, setActiveJob] = useState<TrainingJob | null>(null);
   const [pollingId, setPollingId] = useState<number | null>(null);
   const [requestedDefaults, setRequestedDefaults] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const logContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -134,6 +136,22 @@ function ModelTrainingDialog({
       }
     };
   }, [pollingId]);
+
+  const handleLogScroll = () => {
+    const el = logContainerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 10;
+    setAutoScroll(atBottom);
+  };
+
+  useEffect(() => {
+    if (!activeJob?.logs) return;
+    const el = logContainerRef.current;
+    if (!el) return;
+    if (autoScroll) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [activeJob?.logs, autoScroll]);
 
   const startPolling = (jobId: string) => {
     if (pollingId) {
@@ -205,6 +223,7 @@ function ModelTrainingDialog({
       const response = await axiosInstance.post<{ job: TrainingJob }>("ocr-training/start/", payload);
       const job = response.data.job;
       setActiveJob(job);
+      setAutoScroll(true);
       onNotify?.("Training started.", "success");
       startPolling(job.id);
     } catch (error) {
@@ -416,16 +435,9 @@ function ModelTrainingDialog({
                   Dataset snapshot
                 </Typography>
                 {datasetInfo ? (
-                  <Stack spacing={0.5} sx={{ mt: 0.5 }}>
-                    <Tooltip title={datasetInfo.label_file || ""}>
-                      <Typography variant="body2" sx={{ fontFamily: "monospace" }}>
-                        Label: {datasetInfo.label_file || "-"}
-                      </Typography>
-                    </Tooltip>
-                    <Typography variant="body2">
-                      Pages: {datasetInfo.samples ?? 0} | Annotations: {datasetInfo.annotations ?? 0}
-                    </Typography>
-                  </Stack>
+                  <Typography variant="body2">
+                    Pages: {datasetInfo.samples ?? 0} | Annotations: {datasetInfo.annotations ?? 0}
+                  </Typography>
                 ) : (
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                     Will be generated from current OCR annotations.
@@ -448,16 +460,33 @@ function ModelTrainingDialog({
         </Box>
         {activeJob && (
           <Box mt={2} p={2} sx={{ borderRadius: 2, backgroundColor: "rgba(255,255,255,0.02)" }}>
-            <Typography variant="subtitle2" gutterBottom>
-              Latest run
-            </Typography>
-            <Typography variant="body2" sx={{ fontFamily: "monospace" }}>
-              {activeJob.message}
-            </Typography>
+          <Typography variant="subtitle2" gutterBottom>
+              Logs
+          </Typography>
             {activeJob.error && (
               <Typography variant="body2" color="error" sx={{ mt: 0.5 }}>
                 {activeJob.error}
               </Typography>
+            )}
+            {activeJob.logs && (
+              <Box
+                mt={1.5}
+                sx={{
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: 1,
+                  maxHeight: 260,
+                  overflow: "auto",
+                  backgroundColor: "rgba(0,0,0,0.35)",
+                  p: 1,
+                  fontFamily: "monospace",
+                  fontSize: "0.82rem",
+                  whiteSpace: "pre-wrap",
+                }}
+                ref={logContainerRef}
+                onScroll={handleLogScroll}
+              >
+                {activeJob.logs}
+              </Box>
             )}
           </Box>
         )}
