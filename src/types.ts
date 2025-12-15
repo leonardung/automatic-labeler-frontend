@@ -68,3 +68,61 @@ export interface ProjectSnapshot {
   name?: string;
   label?: string;
 }
+
+export type TrainingModelKey = "det" | "rec" | "kie";
+
+export interface TrainingModelConfigSummary {
+  paddle_cfg?: string;
+  epoch_num?: number;
+  print_batch_step?: number;
+  save_epoch_step?: number;
+  eval_batch_step?: number;
+  pretrained_model?: string;
+  save_model_dir?: string;
+  dataset_train?: string;
+  dataset_val?: string;
+}
+
+export interface TrainingDefaults {
+  use_gpu: boolean;
+  test_ratio: number;
+  train_seed?: number | null;
+  split_seed?: number | null;
+  paths?: {
+    config_path?: string;
+    dataset_root?: string;
+    media_root?: string;
+  };
+  models: Partial<Record<TrainingModelKey, TrainingModelConfigSummary>>;
+}
+
+export type TrainingJobStatus = "pending" | "running" | "completed" | "failed";
+
+export interface TrainingDatasetInfo {
+  label_file?: string;
+  samples?: number;
+  annotations?: number;
+  dataset_dir?: string;
+}
+
+export interface TrainingJob {
+  id: string;
+  status: TrainingJobStatus;
+  message: string;
+  error?: string | null;
+  targets: TrainingModelKey[];
+  started_at?: string;
+  finished_at?: string | null;
+  dataset?: TrainingDatasetInfo;
+  config?: {
+    global?: {
+      use_gpu?: boolean;
+      test_ratio?: number;
+      train_seed?: number | null;
+      split_seed?: number | null;
+      raw_dataset_file?: string;
+      images_folder?: string;
+    };
+    models?: Partial<Record<TrainingModelKey, TrainingModelConfigSummary>>;
+  };
+}
