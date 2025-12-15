@@ -174,6 +174,19 @@ function ModelTrainingDialog({
     }
     setSaving(true);
     try {
+      const allowedKeys: (keyof TrainingModelConfigSummary)[] = [
+        "epoch_num",
+        "print_batch_step",
+        "save_epoch_step",
+        "eval_batch_step",
+      ];
+      const filteredModels = (key: TrainingModelKey) =>
+        Object.fromEntries(
+          Object.entries(modelOverrides[key] || {}).filter(
+            ([field, value]) => allowedKeys.includes(field as keyof TrainingModelConfigSummary) && value !== undefined
+          )
+        );
+
       const payload = {
         project_id: projectId,
         models: selectedModels,
@@ -183,9 +196,9 @@ function ModelTrainingDialog({
           train_seed: numberOrNull(trainSeed),
           split_seed: numberOrNull(splitSeed),
           models: {
-            det: modelOverrides.det,
-            rec: modelOverrides.rec,
-            kie: modelOverrides.kie,
+            det: filteredModels("det"),
+            rec: filteredModels("rec"),
+            kie: filteredModels("kie"),
           },
         },
       };
@@ -232,24 +245,6 @@ function ModelTrainingDialog({
         </Box>
         <Stack spacing={1.5}>
           <TextField
-            label="Paddle Config"
-            size="small"
-            fullWidth
-            value={override.paddle_cfg ?? ""}
-            placeholder={defaultsForModel.paddle_cfg || "path/to/config.yml"}
-            onChange={(e) => updateModelOverride(key, "paddle_cfg", e.target.value)}
-            InputProps={{ sx: { fontFamily: "monospace" } }}
-          />
-          <TextField
-            label="Pretrained Model (optional)"
-            size="small"
-            fullWidth
-            value={override.pretrained_model ?? ""}
-            placeholder={defaultsForModel.pretrained_model || "path/to/pretrained"}
-            onChange={(e) => updateModelOverride(key, "pretrained_model", e.target.value)}
-            InputProps={{ sx: { fontFamily: "monospace" } }}
-          />
-          <TextField
             label="Epochs"
             type="number"
             size="small"
@@ -258,6 +253,59 @@ function ModelTrainingDialog({
             onChange={(e) =>
               updateModelOverride(key, "epoch_num", numberOrNull(e.target.value) as number | undefined)
             }
+          />
+          <TextField
+            label="Print Batch Step"
+            type="number"
+            size="small"
+            value={override.print_batch_step ?? ""}
+            placeholder={defaultsForModel.print_batch_step ? String(defaultsForModel.print_batch_step) : "10"}
+            onChange={(e) =>
+              updateModelOverride(key, "print_batch_step", numberOrNull(e.target.value) as number | undefined)
+            }
+          />
+          <TextField
+            label="Save Epoch Step"
+            type="number"
+            size="small"
+            value={override.save_epoch_step ?? ""}
+            placeholder={defaultsForModel.save_epoch_step ? String(defaultsForModel.save_epoch_step) : "10"}
+            onChange={(e) =>
+              updateModelOverride(key, "save_epoch_step", numberOrNull(e.target.value) as number | undefined)
+            }
+          />
+          <TextField
+            label="Eval Batch Step"
+            type="number"
+            size="small"
+            value={
+              Array.isArray(override.eval_batch_step)
+                ? override.eval_batch_step.join(",")
+                : override.eval_batch_step ?? ""
+            }
+            placeholder={
+              defaultsForModel.eval_batch_step
+                ? Array.isArray(defaultsForModel.eval_batch_step)
+                  ? defaultsForModel.eval_batch_step.join(",")
+                  : String(defaultsForModel.eval_batch_step)
+                : "200"
+            }
+            onChange={(e) => {
+              const raw = e.target.value;
+              if (raw.includes(",")) {
+                const parsed = raw
+                  .split(",")
+                  .map((v) => numberOrNull(v))
+                  .filter((v): v is number => v !== undefined);
+                updateModelOverride(key, "eval_batch_step", parsed.length ? parsed : undefined);
+              } else {
+                updateModelOverride(
+                  key,
+                  "eval_batch_step",
+                  numberOrNull(raw) as number | undefined
+                );
+              }
+            }}
           />
         </Stack>
       </Box>

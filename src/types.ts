@@ -72,15 +72,10 @@ export interface ProjectSnapshot {
 export type TrainingModelKey = "det" | "rec" | "kie";
 
 export interface TrainingModelConfigSummary {
-  paddle_cfg?: string;
   epoch_num?: number;
   print_batch_step?: number;
   save_epoch_step?: number;
-  eval_batch_step?: number;
-  pretrained_model?: string;
-  save_model_dir?: string;
-  dataset_train?: string;
-  dataset_val?: string;
+  eval_batch_step?: number | number[];
 }
 
 export interface TrainingDefaults {
@@ -92,6 +87,13 @@ export interface TrainingDefaults {
     config_path?: string;
     dataset_root?: string;
     media_root?: string;
+    images_folder?: string;
+    dataset_folder?: string;
+    raw_dataset_file?: string;
+    crop_im_dir?: string;
+    paddle_ocr_path?: string;
+    character_dict_path?: string;
+    pretrain_root?: string;
   };
   models: Partial<Record<TrainingModelKey, TrainingModelConfigSummary>>;
 }
