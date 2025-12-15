@@ -79,16 +79,22 @@ function ModelTrainingDialog({
   });
   const [activeJob, setActiveJob] = useState<TrainingJob | null>(null);
   const [pollingId, setPollingId] = useState<number | null>(null);
+  const [requestedDefaults, setRequestedDefaults] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setActiveJob(null);
+      setRequestedDefaults(false);
       if (pollingId) {
         window.clearInterval(pollingId);
         setPollingId(null);
       }
       return;
     }
+    if (requestedDefaults) {
+      return;
+    }
+    setRequestedDefaults(true);
     setLoadingDefaults(true);
     axiosInstance
       .get<{ defaults: TrainingDefaults }>("ocr-training/defaults/")
@@ -119,7 +125,7 @@ function ModelTrainingDialog({
         onNotify?.("Unable to load training defaults.", "error");
       })
       .finally(() => setLoadingDefaults(false));
-  }, [open, onNotify]);
+  }, [open, onNotify, pollingId, requestedDefaults]);
 
   useEffect(() => {
     return () => {
