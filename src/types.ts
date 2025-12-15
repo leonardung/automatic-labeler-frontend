@@ -98,7 +98,7 @@ export interface TrainingDefaults {
   models: Partial<Record<TrainingModelKey, TrainingModelConfigSummary>>;
 }
 
-export type TrainingJobStatus = "pending" | "running" | "completed" | "failed";
+export type TrainingJobStatus = "pending" | "waiting" | "running" | "completed" | "failed" | "stopped";
 
 export interface TrainingDatasetInfo {
   label_file?: string;
@@ -114,8 +114,11 @@ export interface TrainingJob {
   error?: string | null;
   logs?: string;
   targets: TrainingModelKey[];
+  queue_position?: number | null;
   started_at?: string;
   finished_at?: string | null;
+  created_at?: string | null;
+  log_available?: boolean;
   dataset?: TrainingDatasetInfo;
   config?: {
     global?: {

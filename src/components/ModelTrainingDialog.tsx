@@ -12,10 +12,11 @@ import {
   LinearProgress,
   Stack,
   Switch,
+  Tab,
+  Tabs,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import axiosInstance from "../axiosInstance";
@@ -45,9 +46,11 @@ const modelLabels: Record<TrainingModelKey, string> = {
 
 const statusColor: Record<string, "default" | "primary" | "success" | "warning" | "error"> = {
   pending: "default",
+  waiting: "warning",
   running: "primary",
   completed: "success",
   failed: "error",
+  stopped: "warning",
 };
 
 const numberOrNull = (value: string) => {
@@ -77,19 +80,31 @@ function ModelTrainingDialog({
     rec: {},
     kie: {},
   });
-  const [activeJob, setActiveJob] = useState<TrainingJob | null>(null);
-  const [pollingId, setPollingId] = useState<number | null>(null);
+  const [jobs, setJobs] = useState<TrainingJob[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [selectedJob, setSelectedJob] = useState<TrainingJob | null>(null);
+  const [jobsPollingId, setJobsPollingId] = useState<number | null>(null);
+  const [jobPollingId, setJobPollingId] = useState<number | null>(null);
+  const [loadingJobs, setLoadingJobs] = useState(false);
+  const [loadingJobDetail, setLoadingJobDetail] = useState(false);
   const [requestedDefaults, setRequestedDefaults] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [tab, setTab] = useState<"configure" | "runs">("configure");
   const logContainerRef = useRef<HTMLDivElement | null>(null);
+  const selectedJobIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!open) {
-      setActiveJob(null);
+      setSelectedJob(null);
+      setSelectedJobId(null);
       setRequestedDefaults(false);
-      if (pollingId) {
-        window.clearInterval(pollingId);
-        setPollingId(null);
+      if (jobsPollingId) {
+        window.clearInterval(jobsPollingId);
+        setJobsPollingId(null);
+      }
+      if (jobPollingId) {
+        window.clearInterval(jobPollingId);
+        setJobPollingId(null);
       }
       return;
     }
@@ -127,15 +142,163 @@ function ModelTrainingDialog({
         onNotify?.("Unable to load training defaults.", "error");
       })
       .finally(() => setLoadingDefaults(false));
-  }, [open, onNotify, pollingId, requestedDefaults]);
+  }, [open, onNotify, requestedDefaults, jobsPollingId, jobPollingId]);
+
+  useEffect(() => {
+    selectedJobIdRef.current = selectedJobId;
+  }, [selectedJobId]);
 
   useEffect(() => {
     return () => {
-      if (pollingId) {
-        window.clearInterval(pollingId);
+      if (jobsPollingId) {
+        window.clearInterval(jobsPollingId);
+      }
+      if (jobPollingId) {
+        window.clearInterval(jobPollingId);
       }
     };
-  }, [pollingId]);
+  }, [jobsPollingId, jobPollingId]);
+
+  const isTerminalStatus = (status?: string | null) =>
+    status === "completed" || status === "failed" || status === "stopped";
+
+  const loadJobs = async (selectLatest = false) => {
+    if (selectLatest) {
+      setLoadingJobs(true);
+    }
+    try {
+      const response = await axiosInstance.get<{ jobs: TrainingJob[] }>("ocr-training/jobs/");
+      const fetched = response.data.jobs || [];
+      setJobs(fetched);
+      const currentSelectedId = selectedJobIdRef.current;
+      if ((selectLatest || !currentSelectedId) && fetched.length > 0) {
+        const nextId = fetched[0].id;
+        setSelectedJobId((prev) => prev || nextId);
+      }
+      if (currentSelectedId) {
+        const match = fetched.find((job) => job.id === currentSelectedId);
+        if (match) {
+          setSelectedJob((prev) =>
+            prev ? { ...match, logs: prev.logs } : { ...match, logs: undefined }
+          );
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load training jobs", error);
+    } finally {
+      if (selectLatest) {
+        setLoadingJobs(false);
+      }
+    }
+  };
+
+  const startJobsPolling = (selectLatest = false) => {
+    loadJobs(selectLatest);
+    setJobsPollingId((existing) => {
+      if (existing) {
+        window.clearInterval(existing);
+      }
+      return existing;
+    });
+    const id = window.setInterval(() => loadJobs(false), 5000);
+    setJobsPollingId(id);
+  };
+
+  const startJobDetailPolling = (jobId: string) => {
+    setLoadingJobDetail(true);
+    const tick = async () => {
+      try {
+        const response = await axiosInstance.get<{ job: TrainingJob }>(`ocr-training/jobs/${jobId}/`);
+        const job = response.data.job;
+        setSelectedJob(job);
+        setSelectedJobId(jobId);
+        setJobs((prev) =>
+          prev.map((existing) => (existing.id === jobId ? { ...existing, ...job, logs: undefined } : existing))
+        );
+        if (isTerminalStatus(job.status)) {
+          setJobPollingId((existing) => {
+            if (existing) {
+              window.clearInterval(existing);
+            }
+            return null;
+          });
+        }
+      } catch (error) {
+        console.error("Failed to poll training job", error);
+      } finally {
+        setLoadingJobDetail(false);
+      }
+    };
+    tick();
+    setJobPollingId((existing) => {
+      if (existing) {
+        window.clearInterval(existing);
+      }
+      return existing;
+    });
+    const id = window.setInterval(tick, 4000);
+    setJobPollingId(id);
+  };
+
+  const handleSelectJob = (jobId: string) => {
+    const job = jobs.find((item) => item.id === jobId);
+    if (job) {
+      setSelectedJob(job);
+    }
+    setSelectedJobId(jobId);
+    startJobDetailPolling(jobId);
+    setTab("runs");
+  };
+
+  const handleStopJob = async (jobId: string) => {
+    try {
+      const response = await axiosInstance.post<{ job: TrainingJob }>(`ocr-training/jobs/${jobId}/stop/`);
+      const job = response.data.job;
+      setSelectedJob((prev) => (prev?.id === jobId ? job : prev));
+      setJobs((prev) => prev.map((existing) => (existing.id === jobId ? { ...existing, ...job } : existing)));
+      onNotify?.("Stop requested for this training run.", "info");
+      if (!isTerminalStatus(job.status)) {
+        startJobDetailPolling(jobId);
+      }
+      startJobsPolling();
+    } catch (error) {
+      console.error("Failed to stop training job", error);
+      onNotify?.("Could not stop this training run.", "error");
+    }
+  };
+
+  const handleDownloadLogs = async (jobId: string) => {
+    try {
+      const response = await axiosInstance.get(`ocr-training/jobs/${jobId}/logs/`, {
+        responseType: "blob",
+      });
+      const blob = new Blob([response.data], { type: "text/plain" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const disposition = response.headers?.["content-disposition"] || "";
+      const fileNameMatch = disposition.match(/filename="?([^"]+)"?/);
+      const filename = fileNameMatch ? fileNameMatch[1] : `${jobId}.log`;
+      link.href = url;
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to download logs", error);
+      onNotify?.("Could not download logs for this run.", "error");
+    }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    startJobsPolling(true);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !selectedJobId || selectedJob) return;
+    startJobDetailPolling(selectedJobId);
+  }, [open, selectedJob, selectedJobId]);
 
   const handleLogScroll = () => {
     const el = logContainerRef.current;
@@ -145,41 +308,13 @@ function ModelTrainingDialog({
   };
 
   useEffect(() => {
-    if (!activeJob?.logs) return;
+    if (!selectedJob?.logs) return;
     const el = logContainerRef.current;
     if (!el) return;
     if (autoScroll) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [activeJob?.logs, autoScroll]);
-
-  const startPolling = (jobId: string) => {
-    if (pollingId) {
-      window.clearInterval(pollingId);
-    }
-    const tick = async () => {
-      try {
-        const response = await axiosInstance.get<{ job: TrainingJob }>(`ocr-training/jobs/${jobId}/`);
-        const job = response.data.job;
-        setActiveJob(job);
-        if (job.status === "completed" || job.status === "failed") {
-          setPollingId((prev) => {
-            if (prev) window.clearInterval(prev);
-            return null;
-          });
-          onNotify?.(
-            job.status === "completed" ? "Training completed." : job.error || "Training failed.",
-            job.status === "completed" ? "success" : "error"
-          );
-        }
-      } catch (error) {
-        console.error("Failed to poll training job", error);
-      }
-    };
-    tick();
-    const id = window.setInterval(tick, 5000);
-    setPollingId(id);
-  };
+  }, [selectedJob?.logs, autoScroll]);
 
   const handleStart = async () => {
     if (!projectId) {
@@ -222,10 +357,13 @@ function ModelTrainingDialog({
       };
       const response = await axiosInstance.post<{ job: TrainingJob }>("ocr-training/start/", payload);
       const job = response.data.job;
-      setActiveJob(job);
+      setSelectedJob(job);
+      setSelectedJobId(job.id);
       setAutoScroll(true);
-      onNotify?.("Training started.", "success");
-      startPolling(job.id);
+      setTab("runs");
+      onNotify?.("Training queued.", "success");
+      startJobsPolling(true);
+      startJobDetailPolling(job.id);
     } catch (error) {
       console.error("Training failed to start", error);
       onNotify?.("Could not start training run.", "error");
@@ -331,20 +469,24 @@ function ModelTrainingDialog({
     );
   };
 
-  const datasetInfo = activeJob?.dataset;
+  const currentJob = selectedJob || jobs[0] || null;
+  const datasetInfo = currentJob?.dataset;
   const statusChip = useMemo(() => {
-    if (!activeJob) return <Chip label="Idle" variant="outlined" />;
+    if (!currentJob) return <Chip label="Idle" variant="outlined" />;
     return (
       <Chip
-        label={activeJob.status.toUpperCase()}
-        color={statusColor[activeJob.status] || "default"}
+        label={(currentJob.status || "unknown").toUpperCase()}
+        color={statusColor[currentJob.status] || "default"}
         variant="filled"
         sx={{ fontWeight: 700 }}
       />
     );
-  }, [activeJob]);
+  }, [currentJob]);
+  const formatTime = (value?: string | null) =>
+    value ? new Date(value).toLocaleString() : "Not started";
 
   const busy = loadingDefaults || saving;
+  const runsBusy = loadingJobs || loadingJobDetail;
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
@@ -362,144 +504,332 @@ function ModelTrainingDialog({
           overflowX: "hidden",
         }}
       >
-        {busy && <LinearProgress sx={{ mb: 2 }} />}
-        <Box
-          sx={{
-            display: "flex",
-            gap: 2,
-            flexWrap: "wrap",
-            alignItems: "stretch",
-          }}
+        <Tabs
+          value={tab}
+          onChange={(_, value) => setTab(value)}
+          sx={{ mb: 2, borderBottom: "1px solid rgba(255,255,255,0.08)" }}
         >
-          <Box
-            sx={{
-              minWidth: 280,
-              flex: 1,
-              background:
-                "linear-gradient(145deg, rgba(30,44,68,0.8) 0%, rgba(21,28,45,0.95) 100%)",
-              borderRadius: 2,
-              p: 2,
-              border: "1px solid rgba(255,255,255,0.06)",
-              boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
-            }}
-          >
-            <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
-              <Typography variant="subtitle1" fontWeight={700}>
-                Global Settings
-              </Typography>
-              {statusChip}
-            </Box>
-            <Stack spacing={1.25}>
-              <FormControlLabel
-                control={<Switch checked={useGpu} onChange={(e) => setUseGpu(e.target.checked)} />}
-                label="Use GPU"
-              />
-              <TextField
-                label="Test Ratio"
-                size="small"
-                value={testRatio}
-                onChange={(e) => setTestRatio(e.target.value)}
-              />
-              <TextField
-                label="Train Seed"
-                size="small"
-                value={trainSeed}
-                onChange={(e) => setTrainSeed(e.target.value)}
-              />
-              <TextField
-                label="Split Seed"
-                size="small"
-                value={splitSeed}
-                onChange={(e) => setSplitSeed(e.target.value)}
-              />
-              <Box>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                  Models to train
-                </Typography>
-                <ToggleButtonGroup
-                  color="primary"
-                  value={selectedModels}
-                  onChange={(_, value) => setSelectedModels(value || [])}
-                  aria-label="models to train"
-                >
-                  {(["det", "rec", "kie"] as TrainingModelKey[]).map((model) => (
-                    <ToggleButton key={model} value={model} aria-label={modelLabels[model]}>
-                      {modelLabels[model]}
-                    </ToggleButton>
-                  ))}
-                </ToggleButtonGroup>
-              </Box>
-              <Divider />
-              <Box>
-                <Typography variant="subtitle2" color="text.secondary">
-                  Dataset snapshot
-                </Typography>
-                {datasetInfo ? (
-                  <Typography variant="body2">
-                    Pages: {datasetInfo.samples ?? 0} | Annotations: {datasetInfo.annotations ?? 0}
+          <Tab label="Configure" value="configure" />
+          <Tab label="Runs" value="runs" />
+        </Tabs>
+        {tab === "configure" && (
+          <>
+            {busy && <LinearProgress sx={{ mb: 2 }} />}
+            <Box
+              sx={{
+                display: "flex",
+                gap: 2,
+                flexWrap: "wrap",
+                alignItems: "stretch",
+              }}
+            >
+              <Box
+                sx={{
+                  minWidth: 280,
+                  flex: 1,
+                  background:
+                    "linear-gradient(145deg, rgba(30,44,68,0.8) 0%, rgba(21,28,45,0.95) 100%)",
+                  borderRadius: 2,
+                  p: 2,
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+                }}
+              >
+                <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                  <Typography variant="subtitle1" fontWeight={700}>
+                    Global Settings
                   </Typography>
+                  {statusChip}
+                </Box>
+                <Stack spacing={1.25}>
+                  <FormControlLabel
+                    control={<Switch checked={useGpu} onChange={(e) => setUseGpu(e.target.checked)} />}
+                    label="Use GPU"
+                  />
+                  <TextField
+                    label="Test Ratio"
+                    size="small"
+                    value={testRatio}
+                    onChange={(e) => setTestRatio(e.target.value)}
+                  />
+                  <TextField
+                    label="Train Seed"
+                    size="small"
+                    value={trainSeed}
+                    onChange={(e) => setTrainSeed(e.target.value)}
+                  />
+                  <TextField
+                    label="Split Seed"
+                    size="small"
+                    value={splitSeed}
+                    onChange={(e) => setSplitSeed(e.target.value)}
+                  />
+                  <Box>
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Models to train
+                    </Typography>
+                    <ToggleButtonGroup
+                      color="primary"
+                      value={selectedModels}
+                      onChange={(_, value) => setSelectedModels(value || [])}
+                      aria-label="models to train"
+                    >
+                      {(["det", "rec", "kie"] as TrainingModelKey[]).map((model) => (
+                        <ToggleButton key={model} value={model} aria-label={modelLabels[model]}>
+                          {modelLabels[model]}
+                        </ToggleButton>
+                      ))}
+                    </ToggleButtonGroup>
+                  </Box>
+                  <Divider />
+                  <Box>
+                    <Typography variant="subtitle2" color="text.secondary">
+                      Dataset snapshot
+                    </Typography>
+                    {datasetInfo ? (
+                      <Typography variant="body2">
+                        Pages: {datasetInfo.samples ?? 0} | Annotations: {datasetInfo.annotations ?? 0}
+                      </Typography>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                        Will be generated from current OCR annotations.
+                      </Typography>
+                    )}
+                  </Box>
+                </Stack>
+              </Box>
+              <Box
+                sx={{
+                  flex: 2,
+                  minWidth: 360,
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                  gap: 1.5,
+                }}
+              >
+                {selectedModels.map((model) => renderModelFields(model))}
+              </Box>
+            </Box>
+          </>
+        )}
+        {tab === "runs" && (
+          <Box>
+            {runsBusy && <LinearProgress sx={{ mb: 2 }} />}
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", md: "320px 1fr" },
+                gap: 2,
+                alignItems: "stretch",
+              }}
+            >
+              <Box
+                sx={{
+                  background: "rgba(255,255,255,0.02)",
+                  borderRadius: 2,
+                  p: 2,
+                  border: "1px solid rgba(255,255,255,0.08)",
+                }}
+              >
+                <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                  <Typography variant="subtitle1" fontWeight={700}>
+                    Training Runs
+                  </Typography>
+                  <Button size="small" onClick={() => startJobsPolling(true)}>
+                    Refresh
+                  </Button>
+                </Box>
+                <Stack spacing={1.25}>
+                  {jobs.length === 0 && (
+                    <Typography color="text.secondary" variant="body2">
+                      No training runs yet. Start one from the Configure tab.
+                    </Typography>
+                  )}
+                  {jobs.map((job) => {
+                    const selected = selectedJobId === job.id;
+                    const queueLabel =
+                      job.queue_position === 0
+                        ? "Running now"
+                        : job.queue_position
+                        ? `In queue (#${job.queue_position})`
+                        : null;
+                    return (
+                      <Box
+                        key={job.id}
+                        onClick={() => handleSelectJob(job.id)}
+                        sx={{
+                          border: "1px solid",
+                          borderColor: selected ? "primary.main" : "rgba(255,255,255,0.08)",
+                          borderRadius: 1,
+                          p: 1.25,
+                          cursor: "pointer",
+                          backgroundColor: selected ? "rgba(33,150,243,0.08)" : "transparent",
+                          transition: "all 0.2s ease",
+                        }}
+                      >
+                        <Box display="flex" alignItems="center" justifyContent="space-between">
+                          <Typography variant="subtitle1" fontWeight={700}>
+                            Run {job.id.slice(0, 8)}
+                          </Typography>
+                          <Chip
+                            label={(job.status || "pending").toUpperCase()}
+                            color={statusColor[job.status] || "default"}
+                            size="small"
+                          />
+                        </Box>
+                        <Typography variant="body2" color="text.secondary">
+                          {queueLabel ? `${queueLabel} • ` : ""}
+                          Created: {formatTime(job.created_at || job.started_at)}
+                        </Typography>
+                        <Stack direction="row" spacing={1} mt={1}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="warning"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStopJob(job.id);
+                            }}
+                            disabled={isTerminalStatus(job.status)}
+                          >
+                            Stop
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="text"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownloadLogs(job.id);
+                            }}
+                            disabled={!job.log_available}
+                          >
+                            Download Logs
+                          </Button>
+                        </Stack>
+                      </Box>
+                    );
+                  })}
+                </Stack>
+              </Box>
+              <Box
+                sx={{
+                  background: "rgba(255,255,255,0.02)",
+                  borderRadius: 2,
+                  p: 2,
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  minHeight: 320,
+                }}
+              >
+                {selectedJob ? (
+                  <>
+                    <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                      <Box>
+                        <Typography variant="subtitle1" fontWeight={700}>
+                          Run {selectedJob.id.slice(0, 8)}
+                        </Typography>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Chip
+                            label={(selectedJob.status || "pending").toUpperCase()}
+                            color={statusColor[selectedJob.status] || "default"}
+                            size="small"
+                          />
+                          {selectedJob.queue_position !== null &&
+                            selectedJob.queue_position !== undefined &&
+                            !isTerminalStatus(selectedJob.status) && (
+                              <Chip
+                                label={
+                                  selectedJob.queue_position === 0
+                                    ? "Running now"
+                                    : `In queue (#${selectedJob.queue_position})`
+                                }
+                                size="small"
+                                variant="outlined"
+                              />
+                            )}
+                        </Stack>
+                      </Box>
+                      <Stack direction="row" spacing={1}>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => handleDownloadLogs(selectedJob.id)}
+                          disabled={!selectedJob.log_available}
+                        >
+                          Download Logs
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          color="warning"
+                          onClick={() => handleStopJob(selectedJob.id)}
+                          disabled={isTerminalStatus(selectedJob.status)}
+                        >
+                          Stop
+                        </Button>
+                      </Stack>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary">
+                      Targets: {selectedJob.targets.join(", ")}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Created: {formatTime(selectedJob.created_at)} • Started: {formatTime(selectedJob.started_at)} •
+                      Finished: {selectedJob.finished_at ? formatTime(selectedJob.finished_at) : "In progress"}
+                    </Typography>
+                    {selectedJob.dataset && (
+                      <Typography variant="body2" sx={{ mt: 0.5 }}>
+                        Pages: {selectedJob.dataset.samples ?? 0} | Annotations:{" "}
+                        {selectedJob.dataset.annotations ?? 0}
+                      </Typography>
+                    )}
+                    <Divider sx={{ my: 1.5 }} />
+                    <Typography variant="subtitle2" gutterBottom>
+                      Logs
+                    </Typography>
+                    {selectedJob.error && (
+                      <Typography variant="body2" color="error" sx={{ mb: 0.5 }}>
+                        {selectedJob.error}
+                      </Typography>
+                    )}
+                    <Box
+                      sx={{
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        borderRadius: 1,
+                        maxHeight: 320,
+                        minHeight: 200,
+                        overflow: "auto",
+                        backgroundColor: "rgba(0,0,0,0.35)",
+                        p: 1,
+                        fontFamily: "monospace",
+                        fontSize: "0.82rem",
+                        whiteSpace: "pre-wrap",
+                      }}
+                      ref={logContainerRef}
+                      onScroll={handleLogScroll}
+                    >
+                      {selectedJob.logs ? selectedJob.logs : "Logs will appear here as the run progresses."}
+                    </Box>
+                  </>
                 ) : (
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                    Will be generated from current OCR annotations.
+                  <Typography color="text.secondary" variant="body2">
+                    Select a run to view its status and logs.
                   </Typography>
                 )}
               </Box>
-            </Stack>
-          </Box>
-          <Box
-            sx={{
-              flex: 2,
-              minWidth: 360,
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-              gap: 1.5,
-            }}
-          >
-            {selectedModels.map((model) => renderModelFields(model))}
-          </Box>
-        </Box>
-        {activeJob && (
-          <Box mt={2} p={2} sx={{ borderRadius: 2, backgroundColor: "rgba(255,255,255,0.02)" }}>
-          <Typography variant="subtitle2" gutterBottom>
-              Logs
-          </Typography>
-            {activeJob.error && (
-              <Typography variant="body2" color="error" sx={{ mt: 0.5 }}>
-                {activeJob.error}
-              </Typography>
-            )}
-            {activeJob.logs && (
-              <Box
-                mt={1.5}
-                sx={{
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  borderRadius: 1,
-                  maxHeight: 260,
-                  overflow: "auto",
-                  backgroundColor: "rgba(0,0,0,0.35)",
-                  p: 1,
-                  fontFamily: "monospace",
-                  fontSize: "0.82rem",
-                  whiteSpace: "pre-wrap",
-                }}
-                ref={logContainerRef}
-                onScroll={handleLogScroll}
-              >
-                {activeJob.logs}
-              </Box>
-            )}
+            </Box>
           </Box>
         )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Close</Button>
-        <Button
-          onClick={handleStart}
-          variant="contained"
-          disabled={saving || disabled || !projectId}
-        >
-          {activeJob ? "Restart" : "Start Training"}
-        </Button>
+        {tab === "configure" && (
+          <Button
+            onClick={handleStart}
+            variant="contained"
+            disabled={saving || disabled || !projectId}
+          >
+            Start Training
+          </Button>
+        )}
       </DialogActions>
     </Dialog>
   );
