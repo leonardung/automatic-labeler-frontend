@@ -15,8 +15,6 @@ import {
   Tab,
   Tabs,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -77,7 +75,6 @@ function ModelTrainingPage() {
   const [defaults, setDefaults] = useState<TrainingDefaults | null>(null);
   const [loadingDefaults, setLoadingDefaults] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [selectedModels, setSelectedModels] = useState<TrainingModelKey[]>(["det", "rec", "kie"]);
   const [useGpu, setUseGpu] = useState(true);
   const [testRatio, setTestRatio] = useState<string>("0.05");
   const [trainSeed, setTrainSeed] = useState<string>("");
@@ -265,14 +262,15 @@ function ModelTrainingPage() {
   const handleSelectJob = (jobId: string) => {
     const job = jobs.find((item) => item.id === jobId);
     if (job) {
+      const nextModel = job.targets[0] || activeModel;
       setSelectedJob(job);
-      if (job.targets.length && !job.targets.includes(activeModel)) {
-        setActiveModel(job.targets[0]);
+      if (!job.targets.includes(activeModel)) {
+        setActiveModel(nextModel);
       }
+      setPanelTabs((prev) => ({ ...prev, [nextModel]: "runs" }));
     }
     setSelectedJobId(jobId);
     startJobDetailPolling(jobId);
-    setPanelTabs((prev) => ({ ...prev, [activeModel]: "runs" }));
   };
 
   const handleStopJob = async (jobId: string) => {
@@ -363,10 +361,6 @@ function ModelTrainingPage() {
       notify("A project must be loaded before training.", "warning");
       return;
     }
-    if (!selectedModels.length) {
-      notify("Select at least one model to train.", "warning");
-      return;
-    }
     setSaving(true);
     try {
       const allowedKeys: (keyof TrainingModelConfigSummary)[] = [
@@ -384,7 +378,7 @@ function ModelTrainingPage() {
 
       const payload = {
         project_id: projectNumericId,
-        models: selectedModels,
+        models: [activeModel],
         config: {
           use_gpu: useGpu,
           test_ratio: Number(testRatio) || defaults?.test_ratio || 0.1,
@@ -535,9 +529,6 @@ function ModelTrainingPage() {
           <Button variant="outlined" color="secondary" onClick={() => navigate(`/projects/${projectId}`)}>
             Back to Project
           </Button>
-          <Button variant="contained" color="success" disabled={saving || !projectNumericId} onClick={handleStart}>
-            Start Training
-          </Button>
         </Stack>
       </Box>
 
@@ -630,24 +621,6 @@ function ModelTrainingPage() {
               <TextField label="Test Ratio" size="small" value={testRatio} onChange={(e) => setTestRatio(e.target.value)} />
               <TextField label="Train Seed" size="small" value={trainSeed} onChange={(e) => setTrainSeed(e.target.value)} />
               <TextField label="Split Seed" size="small" value={splitSeed} onChange={(e) => setSplitSeed(e.target.value)} />
-              <Box>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                  Models to train
-                </Typography>
-                <ToggleButtonGroup
-                  color="primary"
-                  value={selectedModels}
-                  onChange={(_, value) => setSelectedModels(value || [])}
-                  aria-label="models to train"
-                  fullWidth
-                >
-                  {(["det", "rec", "kie"] as TrainingModelKey[]).map((model) => (
-                    <ToggleButton key={model} value={model} aria-label={modelLabels[model]} sx={{ flex: 1 }}>
-                      {modelLabels[model]}
-                    </ToggleButton>
-                  ))}
-                </ToggleButtonGroup>
-              </Box>
               <Divider />
               <Box>
                 <Typography variant="subtitle2" color="text.secondary">
@@ -761,6 +734,17 @@ function ModelTrainingPage() {
                       <Chip label="Advanced" size="small" color="primary" variant="outlined" />
                     </Box>
                     {renderModelFields(model)}
+                    <Divider sx={{ my: 2 }} />
+                    <Box display="flex" justifyContent="flex-end">
+                      <Button
+                        variant="contained"
+                        color="success"
+                        disabled={saving || !projectNumericId}
+                        onClick={handleStart}
+                      >
+                        Start {modelLabels[model]} Training
+                      </Button>
+                    </Box>
                   </Box>
                 )}
                 {view === "runs" && (
