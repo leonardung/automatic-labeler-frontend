@@ -40,7 +40,6 @@ import TextPromptMaskForm from "../components/TextPromptMaskForm";
 import OCRControls from "../components/OCRControls";
 import OCRTextList from "../components/OCRTextList";
 import OcrCategoryPanel from "../components/OcrCategoryPanel";
-import ModelTrainingDialog from "../components/ModelTrainingDialog";
 import { AuthContext } from "../AuthContext";
 import type {
   ImageModel,
@@ -137,7 +136,6 @@ function ProjectDetailPage() {
   const [loadDialogMode, setLoadDialogMode] = useState<"page" | "project" | null>(null);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [snapshotName, setSnapshotName] = useState("");
-  const [trainingDialogOpen, setTrainingDialogOpen] = useState(false);
   const loading = loadingCounter > 0;
   const ocrModelLoadedRef = useRef(false);
   const [ocrHistory, setOcrHistory] = useState<Record<number, OcrHistoryEntry>>({});
@@ -252,6 +250,11 @@ function ProjectDetailPage() {
     if (isBlocked) return;
     setCurrentIndex((prevIndex) => Math.max(prevIndex - 1, 0));
   }, [isBlocked]);
+
+  const openTrainingPage = useCallback(() => {
+    if (!projectId) return;
+    navigate(`/projects/${projectId}/training`, { state: { projectName: project?.name } });
+  }, [navigate, project?.name, projectId]);
 
   const handleSelectCategory = (categoryId: number) => {
     if (isBlocked) return;
@@ -1634,11 +1637,11 @@ function ProjectDetailPage() {
           <Button
             variant="contained"
             color="success"
-            onClick={() => setTrainingDialogOpen(true)}
+            onClick={openTrainingPage}
             disabled={isBlocked || !project}
             sx={{ boxShadow: "0 10px 28px rgba(94,255,180,0.25)" }}
           >
-            Train Models
+            Models Training
           </Button>
         )}
 
@@ -1961,16 +1964,6 @@ function ProjectDetailPage() {
           No images loaded. Please upload images.
         </Typography>
       )}
-      <ModelTrainingDialog
-        open={trainingDialogOpen}
-        onClose={() => setTrainingDialogOpen(false)}
-        projectId={project?.id ?? null}
-        projectName={project?.name}
-        disabled={isBlocked || !isOCRProject}
-        onNotify={(message, severity = "info") =>
-          setNotification({ open: true, message, severity })
-        }
-      />
       <Dialog
         open={Boolean(loadDialogMode)}
         onClose={() => setLoadDialogMode(null)}

@@ -105,6 +105,11 @@ export interface TrainingDatasetInfo {
   samples?: number;
   annotations?: number;
   dataset_dir?: string;
+   images?: number;
+   total_images?: number;
+   boxes?: number;
+   categories?: { label: string; count: number }[];
+   category_total?: number;
 }
 
 export interface TrainingJob {
