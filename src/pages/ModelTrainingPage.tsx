@@ -185,7 +185,11 @@ function ModelTrainingPage() {
     setLoadingDataset(true);
     try {
       const response = await axiosInstance.get<{ dataset: TrainingDatasetInfo }>("ocr-training/dataset/", {
-        params: { project_id: projectNumericId },
+        params: {
+          project_id: projectNumericId,
+          test_ratio: Number.isFinite(Number(testRatio)) ? Number(testRatio) : undefined,
+          split_seed: numberOrNull(splitSeed),
+        },
       });
       setDatasetSummary(response.data.dataset || null);
     } catch (error) {
@@ -409,6 +413,62 @@ function ModelTrainingPage() {
     }
   }, [selectedJob?.logs, autoScroll]);
 
+  const renderDatasetSnapshot = (info: TrainingDatasetInfo) => {
+    const rows = [
+      {
+        label: "Train",
+        pages: info.train_samples ?? 0,
+        annotations: info.train_annotations ?? 0,
+      },
+      {
+        label: "Test",
+        pages: info.test_samples ?? 0,
+        annotations: info.test_annotations ?? 0,
+      },
+      {
+        label: "Total",
+        pages: info.samples ?? info.images ?? 0,
+        annotations: info.annotations ?? info.boxes ?? 0,
+      },
+    ];
+    return (
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: "80px minmax(70px, 1fr) minmax(100px, 1fr)",
+          columnGap: 1,
+          rowGap: 0.5,
+          mt: 0.75,
+          alignItems: "center",
+        }}
+      >
+        <span />
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textAlign: "right" }}>
+          Pages
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textAlign: "right" }}>
+          Annotations
+        </Typography>
+        {rows.map((row) => {
+          const muted = row.label === "Total";
+          return (
+            <React.Fragment key={row.label}>
+              <Typography variant="body2" color={muted ? "text.secondary" : undefined}>
+                {row.label}
+              </Typography>
+              <Typography variant="body2" color={muted ? "text.secondary" : undefined} sx={{ textAlign: "right" }}>
+                {row.pages}
+              </Typography>
+              <Typography variant="body2" color={muted ? "text.secondary" : undefined} sx={{ textAlign: "right" }}>
+                {row.annotations}
+              </Typography>
+            </React.Fragment>
+          );
+        })}
+      </Box>
+    );
+  };
+
   const handleStart = async () => {
     if (!projectNumericId) {
       notify("A project must be loaded before training.", "warning");
@@ -453,6 +513,7 @@ function ModelTrainingPage() {
       notify("Training queued.", "success");
       startJobsPolling(true);
       startJobDetailPolling(job.id);
+      await loadDatasetSummary();
     } catch (error) {
       console.error("Training failed to start", error);
       notify("Could not start training run.", "error");
@@ -668,9 +729,7 @@ function ModelTrainingPage() {
                   Dataset snapshot
                 </Typography>
                 {datasetInfo ? (
-                  <Typography variant="body2">
-                    Pages: {datasetInfo.samples ?? 0} | Annotations: {datasetInfo.annotations ?? 0}
-                  </Typography>
+                  renderDatasetSnapshot(datasetInfo)
                 ) : (
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                     Will be generated from current OCR annotations.
@@ -976,9 +1035,7 @@ function ModelTrainingPage() {
                               Finished: {displayedJob.finished_at ? formatTime(displayedJob.finished_at) : "In progress"}
                             </Typography>
                             {displayedJob.dataset && (
-                              <Typography variant="body2" sx={{ mt: 0.5 }}>
-                                Pages: {displayedJob.dataset.samples ?? 0} | Annotations: {displayedJob.dataset.annotations ?? 0}
-                              </Typography>
+                              renderDatasetSnapshot(displayedJob.dataset)
                             )}
                             <Divider sx={{ my: 1.5 }} />
                             <Typography variant="subtitle2" gutterBottom>

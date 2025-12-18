@@ -91,6 +91,10 @@ export type TrainingJobStatus = "pending" | "waiting" | "running" | "completed" 
 export interface TrainingDatasetInfo {
   samples?: number;
   annotations?: number;
+  train_samples?: number;
+  test_samples?: number;
+  train_annotations?: number;
+  test_annotations?: number;
   images?: number;
   total_images?: number;
   boxes?: number;
