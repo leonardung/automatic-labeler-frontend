@@ -112,11 +112,16 @@ function ModelTrainingPage() {
       if (jobsPollingId) {
         window.clearInterval(jobsPollingId);
       }
+    };
+  }, [jobsPollingId]);
+
+  useEffect(() => {
+    return () => {
       if (jobPollingId) {
         window.clearInterval(jobPollingId);
       }
     };
-  }, [jobsPollingId, jobPollingId]);
+  }, [jobPollingId]);
 
   const notify = (message: string, severity: SnackState["severity"] = "info") => {
     setNotification({ open: true, message, severity });
