@@ -101,6 +101,7 @@ function ModelTrainingPage() {
 
   const logContainerRef = useRef<HTMLDivElement | null>(null);
   const selectedJobIdRef = useRef<string | null>(null);
+  const jobsPollingIdRef = useRef<number | null>(null);
 
   const projectNumericId = projectId ? Number(projectId) : null;
   useEffect(() => {
@@ -114,6 +115,9 @@ function ModelTrainingPage() {
       }
     };
   }, [jobsPollingId]);
+  useEffect(() => {
+    jobsPollingIdRef.current = jobsPollingId;
+  }, [jobsPollingId]);
 
   useEffect(() => {
     return () => {
@@ -126,6 +130,9 @@ function ModelTrainingPage() {
   const notify = (message: string, severity: SnackState["severity"] = "info") => {
     setNotification({ open: true, message, severity });
   };
+
+  const hasActiveJobs = (list: TrainingJob[]) =>
+    list.some((job) => job.status === "running" || job.status === "waiting");
 
   const isTerminalStatus = (status?: string | null) =>
     status === "completed" || status === "failed" || status === "stopped";
@@ -181,13 +188,13 @@ function ModelTrainingPage() {
     }
   };
 
-  const loadJobs = async (selectLatest = false) => {
+  const loadJobs = async (selectLatest = false, managePolling = false): Promise<TrainingJob[]> => {
     if (selectLatest) {
       setLoadingJobs(true);
     }
     try {
       const response = await axiosInstance.get<{ jobs: TrainingJob[] }>("ocr-training/jobs/");
-      const fetched = response.data.jobs || [];
+      const fetched: TrainingJob[] = response.data.jobs || [];
       setJobs(fetched);
       const currentSelectedId = selectedJobIdRef.current;
       if ((selectLatest || !currentSelectedId) && fetched.length > 0) {
@@ -207,6 +214,12 @@ function ModelTrainingPage() {
           );
         }
       }
+      const active = hasActiveJobs(fetched);
+      if (managePolling && !active && jobsPollingIdRef.current) {
+        window.clearInterval(jobsPollingIdRef.current);
+        setJobsPollingId(null);
+      }
+      return fetched;
     } catch (error) {
       console.error("Failed to load training jobs", error);
     } finally {
@@ -214,18 +227,23 @@ function ModelTrainingPage() {
         setLoadingJobs(false);
       }
     }
+    return [];
   };
 
   const startJobsPolling = (selectLatest = false) => {
-    loadJobs(selectLatest);
-    setJobsPollingId((existing) => {
-      if (existing) {
-        window.clearInterval(existing);
-      }
-      return existing;
+    loadJobs(selectLatest, true).then((fetched) => {
+      const active = hasActiveJobs(fetched);
+      setJobsPollingId((existing) => {
+        if (existing) {
+          window.clearInterval(existing);
+        }
+        if (!active) {
+          return null;
+        }
+        const id = window.setInterval(() => loadJobs(false, true), 5000);
+        return id;
+      });
     });
-    const id = window.setInterval(() => loadJobs(false), 5000);
-    setJobsPollingId(id);
   };
 
   const startJobDetailPolling = (jobId: string) => {
@@ -671,7 +689,32 @@ function ModelTrainingPage() {
                       {formatTime(job.created_at || job.started_at)}
                     </Typography>
                   </Box>
-                  <Chip label={(job.status || "pending").toUpperCase()} color={statusColor[job.status] || "default"} size="small" />
+                  <Stack spacing={0.5} alignItems="flex-end" minWidth={140}>
+                    <Chip
+                      label={(job.status || "pending").toUpperCase()}
+                      color={statusColor[job.status] || "default"}
+                      size="small"
+                    />
+                    {job.status === "running" && (
+                      <>
+                        <LinearProgress
+                          variant={
+                            job.progress && job.progress.percent !== null && job.progress.percent !== undefined
+                              ? "determinate"
+                              : "indeterminate"
+                          }
+                          value={job.progress?.percent ?? 0}
+                          sx={{ width: 140 }}
+                        />
+                        <Typography variant="caption" color="text.secondary">
+                          {job.progress?.label ||
+                            `Epoch ${job.progress?.current ?? "?"}${
+                              job.progress?.total ? `/${job.progress?.total}` : ""
+                            }`}
+                        </Typography>
+                      </>
+                    )}
+                  </Stack>
                 </Box>
               ))}
               {jobs.length === 0 && (

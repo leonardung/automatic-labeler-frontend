@@ -112,6 +112,13 @@ export interface TrainingDatasetInfo {
    category_total?: number;
 }
 
+export interface TrainingProgress {
+  current?: number | null;
+  total?: number | null;
+  percent?: number | null;
+  label?: string | null;
+}
+
 export interface TrainingJob {
   id: string;
   status: TrainingJobStatus;
@@ -125,6 +132,7 @@ export interface TrainingJob {
   created_at?: string | null;
   log_available?: boolean;
   dataset?: TrainingDatasetInfo;
+  progress?: TrainingProgress;
   config?: {
     global?: {
       use_gpu?: boolean;
