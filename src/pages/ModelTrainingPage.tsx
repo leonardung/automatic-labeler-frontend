@@ -150,7 +150,9 @@ function ModelTrainingPage() {
     setRequestedDefaults(true);
     setLoadingDefaults(true);
     axiosInstance
-      .get<{ defaults: TrainingDefaults }>("ocr-training/defaults/")
+      .get<{ defaults: TrainingDefaults }>("ocr-training/defaults/", {
+        params: projectNumericId ? { project_id: projectNumericId } : undefined,
+      })
       .then((response) => {
         const nextDefaults = response.data.defaults;
         setDefaults(nextDefaults);
@@ -384,8 +386,10 @@ function ModelTrainingPage() {
   // Keep initial job details in sync without rerunning bootstrap helpers
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!selectedJobId || selectedJob) return;
-    startJobDetailPolling(selectedJobId);
+    if (!selectedJobId) return;
+    if (!selectedJob || selectedJob.logs === undefined) {
+      startJobDetailPolling(selectedJobId);
+    }
   }, [selectedJob, selectedJobId]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -401,6 +405,22 @@ function ModelTrainingPage() {
   }, [activeModel, jobs]);
 
   useEffect(() => {
+    if (panelTabs[activeModel] !== "runs") return;
+    const jobsForModel = jobs.filter((job) => job.targets.includes(activeModel));
+    if (jobsForModel.length === 0) return;
+    const targetJob = jobsForModel.find((job) => job.id === selectedJobId) || jobsForModel[0];
+    if (selectedJobId !== targetJob.id) {
+      setSelectedJobId(targetJob.id);
+    }
+    if (!selectedJob || selectedJob.id !== targetJob.id) {
+      setSelectedJob(targetJob);
+    }
+    if (!selectedJob || selectedJob.id !== targetJob.id || selectedJob.logs === undefined) {
+      startJobDetailPolling(targetJob.id);
+    }
+  }, [panelTabs, activeModel, jobs, selectedJob, selectedJobId]);
+
+  useEffect(() => {
     if (!hasActiveJobs(jobs)) {
       stopJobsPolling();
     }
@@ -411,6 +431,13 @@ function ModelTrainingPage() {
     if (!el) return;
     const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 10;
     setAutoScroll(atBottom);
+  };
+
+  const scrollLogsToEnd = () => {
+    const el = logContainerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    setAutoScroll(true);
   };
 
   useEffect(() => {
@@ -1047,9 +1074,14 @@ function ModelTrainingPage() {
                               renderDatasetSnapshot(displayedJob.dataset)
                             )}
                             <Divider sx={{ my: 1.5 }} />
-                            <Typography variant="subtitle2" gutterBottom>
-                              Logs
-                            </Typography>
+                            <Box display="flex" alignItems="center" justifyContent="space-between">
+                              <Typography variant="subtitle2" gutterBottom>
+                                Logs
+                              </Typography>
+                              <Button size="small" onClick={scrollLogsToEnd}>
+                                Go to End
+                              </Button>
+                            </Box>
                             {displayedJob.error && (
                               <Typography variant="body2" color="error" sx={{ mb: 0.5 }}>
                                 {displayedJob.error}
