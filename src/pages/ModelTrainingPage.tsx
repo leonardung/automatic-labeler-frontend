@@ -470,12 +470,13 @@ function ModelTrainingPage() {
     return (
       <Box
         sx={{
-          display: "grid",
-          gridTemplateColumns: "80px minmax(70px, 1fr) minmax(100px, 1fr)",
-          columnGap: 1,
+          display: "inline-grid",
+          gridTemplateColumns: "30px max-content max-content",
+          columnGap: 3,
           rowGap: 0.5,
           mt: 0.75,
           alignItems: "center",
+          alignSelf: "flex-start",
         }}
       >
         <span />
