@@ -76,7 +76,7 @@ function ModelTrainingPage() {
   const [loadingDefaults, setLoadingDefaults] = useState(false);
   const [saving, setSaving] = useState(false);
   const [useGpu, setUseGpu] = useState(true);
-  const [testRatio, setTestRatio] = useState<string>("0.05");
+  const [testRatio, setTestRatio] = useState<string>("");
   const [trainSeed, setTrainSeed] = useState<string>("");
   const [splitSeed, setSplitSeed] = useState<string>("");
   const [modelOverrides, setModelOverrides] = useState<ModelOverrides>({
@@ -184,11 +184,15 @@ function ModelTrainingPage() {
     if (!projectNumericId) return;
     setLoadingDataset(true);
     try {
+      const ratio = Number(testRatio);
+      const ratioParam = Number.isFinite(ratio) ? ratio : defaults?.test_ratio ?? 0.3;
+      const splitSeedValue = numberOrNull(splitSeed);
+      const splitSeedParam = splitSeedValue !== undefined ? splitSeedValue : defaults?.split_seed;
       const response = await axiosInstance.get<{ dataset: TrainingDatasetInfo }>("ocr-training/dataset/", {
         params: {
           project_id: projectNumericId,
-          test_ratio: Number.isFinite(Number(testRatio)) ? Number(testRatio) : undefined,
-          split_seed: numberOrNull(splitSeed),
+          test_ratio: ratioParam,
+          split_seed: splitSeedParam,
         },
       });
       setDatasetSummary(response.data.dataset || null);
@@ -368,9 +372,14 @@ function ModelTrainingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     loadDefaults();
-    loadDatasetSummary();
     startJobsPolling(true);
   }, []);
+
+  useEffect(() => {
+    if (defaults && projectNumericId) {
+      loadDatasetSummary();
+    }
+  }, [defaults, projectNumericId]);
 
   // Keep initial job details in sync without rerunning bootstrap helpers
   // eslint-disable-next-line react-hooks/exhaustive-deps
