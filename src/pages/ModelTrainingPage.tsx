@@ -123,14 +123,9 @@ function ModelTrainingPage() {
 
   useEffect(() => {
     return () => {
-      if (jobsPollingIdRef.current) {
-        window.clearInterval(jobsPollingIdRef.current);
-      }
-      if (jobsPollingId) {
-        window.clearInterval(jobsPollingId);
-      }
+      stopJobsPolling();
     };
-  }, [jobsPollingId]);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -270,10 +265,18 @@ function ModelTrainingPage() {
       try {
         const response = await axiosInstance.get<{ job: TrainingJob }>(`ocr-training/jobs/${jobId}/`);
         const job = response.data.job;
-        setSelectedJob(job);
+        setSelectedJob((prev) => {
+          const previousForJob = prev?.id === jobId ? prev : null;
+          const logs = job.logs !== undefined ? job.logs : previousForJob?.logs;
+          return { ...job, logs };
+        });
         setSelectedJobId(jobId);
         setJobs((prev) =>
-          prev.map((existing) => (existing.id === jobId ? { ...existing, ...job, logs: undefined } : existing))
+          prev.map((existing) => {
+            if (existing.id !== jobId) return existing;
+            const logs = job.logs !== undefined ? job.logs : existing.logs;
+            return { ...existing, ...job, logs };
+          })
         );
         if (isTerminalStatus(job.status)) {
           setJobPollingId((existing) => {
@@ -304,7 +307,10 @@ function ModelTrainingPage() {
     const job = jobs.find((item) => item.id === jobId);
     if (job) {
       const nextModel = job.targets[0] || activeModel;
-      setSelectedJob(job);
+      setSelectedJob((prev) => {
+        const logs = prev?.id === jobId ? prev.logs : job.logs;
+        return { ...job, logs };
+      });
       if (!job.targets.includes(activeModel)) {
         setActiveModel(nextModel);
       }
@@ -539,7 +545,6 @@ function ModelTrainingPage() {
   return (
     <Box sx={{ minHeight: "100vh", backgroundColor: "#0f1624", color: "#e5f1ff" }}>
       <CssBaseline />
-      {(busy || runsBusy || loadingDataset) && <LinearProgress />}
       <Box
         sx={{
           display: "flex",
@@ -810,7 +815,6 @@ function ModelTrainingPage() {
                 )}
                 {view === "runs" && (
                   <Box>
-                    {runsBusy && <LinearProgress sx={{ mb: 1 }} />}
                     <Box
                       sx={{
                         display: "grid",
