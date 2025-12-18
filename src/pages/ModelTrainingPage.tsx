@@ -413,7 +413,6 @@ function ModelTrainingPage() {
       const allowedKeys: (keyof TrainingModelConfigSummary)[] = [
         "epoch_num",
         "print_batch_step",
-        "save_epoch_step",
         "eval_batch_step",
       ];
       const filteredModels = (key: TrainingModelKey) =>
@@ -483,16 +482,6 @@ function ModelTrainingPage() {
           placeholder={defaultsForModel.print_batch_step ? String(defaultsForModel.print_batch_step) : "10"}
           onChange={(e) =>
             updateModelOverride(key, "print_batch_step", numberOrNull(e.target.value) as number | undefined)
-          }
-        />
-        <TextField
-          label="Save Epoch Step"
-          type="number"
-          size="small"
-          value={override.save_epoch_step ?? ""}
-          placeholder={defaultsForModel.save_epoch_step ? String(defaultsForModel.save_epoch_step) : "10"}
-          onChange={(e) =>
-            updateModelOverride(key, "save_epoch_step", numberOrNull(e.target.value) as number | undefined)
           }
         />
         <TextField
