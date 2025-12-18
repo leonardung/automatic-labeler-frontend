@@ -103,6 +103,19 @@ function ModelTrainingPage() {
   const selectedJobIdRef = useRef<string | null>(null);
   const jobsPollingIdRef = useRef<number | null>(null);
 
+  const stopJobsPolling = () => {
+    if (jobsPollingIdRef.current) {
+      window.clearInterval(jobsPollingIdRef.current);
+      jobsPollingIdRef.current = null;
+    }
+    setJobsPollingId((existing) => {
+      if (existing) {
+        window.clearInterval(existing);
+      }
+      return null;
+    });
+  };
+
   const projectNumericId = projectId ? Number(projectId) : null;
   useEffect(() => {
     selectedJobIdRef.current = selectedJobId;
@@ -110,13 +123,13 @@ function ModelTrainingPage() {
 
   useEffect(() => {
     return () => {
+      if (jobsPollingIdRef.current) {
+        window.clearInterval(jobsPollingIdRef.current);
+      }
       if (jobsPollingId) {
         window.clearInterval(jobsPollingId);
       }
     };
-  }, [jobsPollingId]);
-  useEffect(() => {
-    jobsPollingIdRef.current = jobsPollingId;
   }, [jobsPollingId]);
 
   useEffect(() => {
@@ -215,9 +228,8 @@ function ModelTrainingPage() {
         }
       }
       const active = hasActiveJobs(fetched);
-      if (managePolling && !active && jobsPollingIdRef.current) {
-        window.clearInterval(jobsPollingIdRef.current);
-        setJobsPollingId(null);
+      if (managePolling && !active) {
+        stopJobsPolling();
       }
       return fetched;
     } catch (error) {
@@ -237,10 +249,16 @@ function ModelTrainingPage() {
         if (existing) {
           window.clearInterval(existing);
         }
+        if (jobsPollingIdRef.current) {
+          window.clearInterval(jobsPollingIdRef.current);
+          jobsPollingIdRef.current = null;
+        }
         if (!active) {
+          jobsPollingIdRef.current = null;
           return null;
         }
         const id = window.setInterval(() => loadJobs(false, true), 5000);
+        jobsPollingIdRef.current = id;
         return id;
       });
     });
@@ -362,6 +380,12 @@ function ModelTrainingPage() {
       startJobDetailPolling(next.id);
     }
   }, [activeModel, jobs]);
+
+  useEffect(() => {
+    if (!hasActiveJobs(jobs)) {
+      stopJobsPolling();
+    }
+  }, [jobs]);
 
   const handleLogScroll = () => {
     const el = logContainerRef.current;
