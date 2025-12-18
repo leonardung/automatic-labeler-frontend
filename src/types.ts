@@ -83,33 +83,19 @@ export interface TrainingDefaults {
   test_ratio: number;
   train_seed?: number | null;
   split_seed?: number | null;
-  paths?: {
-    config_path?: string;
-    dataset_root?: string;
-    media_root?: string;
-    images_folder?: string;
-    dataset_folder?: string;
-    raw_dataset_file?: string;
-    crop_im_dir?: string;
-    paddle_ocr_path?: string;
-    character_dict_path?: string;
-    pretrain_root?: string;
-  };
   models: Partial<Record<TrainingModelKey, TrainingModelConfigSummary>>;
 }
 
 export type TrainingJobStatus = "pending" | "waiting" | "running" | "completed" | "failed" | "stopped";
 
 export interface TrainingDatasetInfo {
-  label_file?: string;
   samples?: number;
   annotations?: number;
-  dataset_dir?: string;
-   images?: number;
-   total_images?: number;
-   boxes?: number;
-   categories?: { label: string; count: number }[];
-   category_total?: number;
+  images?: number;
+  total_images?: number;
+  boxes?: number;
+  categories?: { label: string; count: number }[];
+  category_total?: number;
 }
 
 export interface TrainingProgress {
@@ -140,7 +126,6 @@ export interface TrainingJob {
       train_seed?: number | null;
       split_seed?: number | null;
       raw_dataset_file?: string;
-      images_folder?: string;
     };
     models?: Partial<Record<TrainingModelKey, TrainingModelConfigSummary>>;
   };
