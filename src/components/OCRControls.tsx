@@ -7,7 +7,9 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   MenuItem,
+  Switch,
   TextField,
   Tooltip,
 } from "@mui/material";
@@ -25,6 +27,7 @@ interface OCRControlsProps {
   onStopBlocking: () => void;
   disabled?: boolean;
   endpointBase: string;
+  projectId?: number | string | null;
 }
 
 const OCRControls: React.FC<OCRControlsProps> = ({
@@ -35,6 +38,7 @@ const OCRControls: React.FC<OCRControlsProps> = ({
   onStopBlocking,
   disabled,
   endpointBase,
+  projectId,
 }) => {
   const DETECT_MODELS = ["PP-OCRv5_server_det", "PP-OCRv5_mobile_det", "PP-OCRv4_server_det", "PP-OCRv4_mobile_det"];
   const RECOGNIZE_MODELS = ["PP-OCRv5_server_rec", "PP-OCRv5_mobile_rec", "PP-OCRv4_server_rec_doc"];
@@ -46,6 +50,8 @@ const OCRControls: React.FC<OCRControlsProps> = ({
   const [recognizeModel, setRecognizeModel] = useState(RECOGNIZE_MODELS[0]);
   const [classifyModel, setClassifyModel] = useState<string>("");
   const [savingConfig, setSavingConfig] = useState(false);
+  const [useTrainedDet, setUseTrainedDet] = useState(false);
+  const [useTrainedRec, setUseTrainedRec] = useState(false);
 
   const handleDetectRegions = async () => {
     if (disabled || !image.id) return;
@@ -96,9 +102,35 @@ const OCRControls: React.FC<OCRControlsProps> = ({
     setSavingConfig(true);
     try {
       onStartBlocking("Applying OCR models...");
+      let nextDetectModel = detectModel;
+      let nextRecognizeModel = recognizeModel;
+
+      const targets: ("det" | "rec")[] = [];
+      if (useTrainedDet) targets.push("det");
+      if (useTrainedRec) targets.push("rec");
+
+      if (targets.length > 0) {
+        if (!projectId) {
+          throw new Error("Project id is required to load trained models.");
+        }
+        const response = await axiosInstance.post(`${endpointBase}/configure_trained_models/`, {
+          project_id: projectId,
+          models: targets,
+        });
+        const loaded = response.data?.loaded || {};
+        if (useTrainedDet && loaded.det?.model_key) {
+          nextDetectModel = loaded.det.model_key as string;
+          setDetectModel(nextDetectModel);
+        }
+        if (useTrainedRec && loaded.rec?.model_key) {
+          nextRecognizeModel = loaded.rec.model_key as string;
+          setRecognizeModel(nextRecognizeModel);
+        }
+      }
+
       await axiosInstance.post(`${endpointBase}/configure_models/`, {
-        detect_model: detectModel,
-        recognize_model: recognizeModel,
+        detect_model: nextDetectModel,
+        recognize_model: nextRecognizeModel,
         classify_model: classifyModel || undefined,
       });
       setConfigOpen(false);
@@ -160,6 +192,16 @@ const OCRControls: React.FC<OCRControlsProps> = ({
                 </MenuItem>
               ))}
             </TextField>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={useTrainedDet}
+                  onChange={(e) => setUseTrainedDet(e.target.checked)}
+                  disabled={!projectId}
+                />
+              }
+              label="Use trained detection model for this project"
+            />
             <TextField
               label="Tolerance ratio (rect merge)"
               type="number"
@@ -186,6 +228,16 @@ const OCRControls: React.FC<OCRControlsProps> = ({
                 </MenuItem>
               ))}
             </TextField>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={useTrainedRec}
+                  onChange={(e) => setUseTrainedRec(e.target.checked)}
+                  disabled={!projectId}
+                />
+              }
+              label="Use trained recognition model for this project"
+            />
             {projectType === "ocr_kie" && (
               <TextField
                 select

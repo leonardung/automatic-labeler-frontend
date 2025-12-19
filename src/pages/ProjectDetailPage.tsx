@@ -1695,6 +1695,7 @@ function ProjectDetailPage() {
                   <OCRControls
                     image={currentImage}
                     projectType={projectType}
+                    projectId={projectId}
                     endpointBase={imageEndpointBase}
                     onImageUpdated={handleImageUpdated}
                     onStartBlocking={startBlocking}
