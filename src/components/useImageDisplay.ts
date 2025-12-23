@@ -7,6 +7,9 @@ type FitMode = "inside" | "outside";
 const useImageDisplay = (imageSrc: string | null) => {
   const imageRef = useRef<HTMLImageElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // Refs keep the latest values handy inside callbacks.
+  const zoomRef = useRef<number>(1);
+  const panRef = useRef<Point>({ x: 0, y: 0 });
 
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [panOffset, setPanOffset] = useState<Point>({ x: 0, y: 0 });
@@ -22,6 +25,14 @@ const useImageDisplay = (imageSrc: string | null) => {
   const [fitMode, setFitMode] = useState<FitMode>("inside");
 
   const clampZoom = (value: number) => Math.max(0.05, Math.min(value, 5));
+
+  useEffect(() => {
+    zoomRef.current = zoomLevel;
+  }, [zoomLevel]);
+
+  useEffect(() => {
+    panRef.current = panOffset;
+  }, [panOffset]);
 
   const calculateDisplayParams = () => {
     if (!imageRef.current || !containerRef.current) {
@@ -67,6 +78,8 @@ const useImageDisplay = (imageSrc: string | null) => {
     (mode: FitMode) => {
       const params = computeFit(mode);
       setFitMode(mode);
+      zoomRef.current = params.zoom;
+      panRef.current = params.pan;
       setZoomLevel(params.zoom);
       setPanOffset(params.pan);
     },
@@ -84,15 +97,21 @@ const useImageDisplay = (imageSrc: string | null) => {
       const originX = origin?.x ?? rect.width / 2;
       const originY = origin?.y ?? rect.height / 2;
 
-      setZoomLevel((prevZoom) => {
-        const targetZoom = clampZoom(prevZoom * factor);
-        const zoomFactor = targetZoom / prevZoom;
-        setPanOffset((prevPan) => ({
-          x: originX - (originX - prevPan.x) * zoomFactor,
-          y: originY - (originY - prevPan.y) * zoomFactor,
-        }));
-        return targetZoom;
-      });
+      const currentZoom = zoomRef.current;
+      const currentPan = panRef.current;
+      const targetZoom = clampZoom(currentZoom * factor);
+
+      const imgX = (originX - currentPan.x) / currentZoom;
+      const imgY = (originY - currentPan.y) / currentZoom;
+      const nextPan = {
+        x: originX - imgX * targetZoom,
+        y: originY - imgY * targetZoom,
+      };
+
+      zoomRef.current = targetZoom;
+      panRef.current = nextPan;
+      setZoomLevel(targetZoom);
+      setPanOffset(nextPan);
     },
     []
   );
@@ -190,6 +209,7 @@ const useImageDisplay = (imageSrc: string | null) => {
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
+    event.preventDefault();
 
     const { clientX, clientY } = event;
 
@@ -217,10 +237,14 @@ const useImageDisplay = (imageSrc: string | null) => {
 
     setPanStart({ x: event.clientX, y: event.clientY });
 
-    setPanOffset((prevPanOffset) => ({
-      x: prevPanOffset.x + deltaX,
-      y: prevPanOffset.y + deltaY,
-    }));
+    setPanOffset((prevPanOffset) => {
+      const nextPan = {
+        x: prevPanOffset.x + deltaX,
+        y: prevPanOffset.y + deltaY,
+      };
+      panRef.current = nextPan;
+      return nextPan;
+    });
   };
 
   const handleMouseUp = () => {
