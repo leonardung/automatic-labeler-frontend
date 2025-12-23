@@ -360,28 +360,28 @@ function ProjectDetailPage() {
     }
   }, [projectId]);
 
+  const fetchProject = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const response = await axiosInstance.get<Project>(`projects/${projectId}/`);
+
+      applyProjectPayload(response.data);
+      setTimeout(() => {
+        setImages((prev) => prev.map((img) => ({ ...img })));
+      }, 0);
+    } catch (error) {
+      console.error("Error fetching project details:", error);
+      setNotification({
+        open: true,
+        message: "Error fetching project details.",
+        severity: "error",
+      });
+    }
+  }, [applyProjectPayload, projectId]);
+
   useEffect(() => {
-    const fetchProject = async () => {
-      if (!projectId) return;
-      try {
-        const response = await axiosInstance.get<Project>(`projects/${projectId}/`);
-
-        applyProjectPayload(response.data);
-        setTimeout(() => {
-          setImages((prev) => prev.map((img) => ({ ...img })));
-        }, 0);
-      } catch (error) {
-        console.error("Error fetching project details:", error);
-        setNotification({
-          open: true,
-          message: "Error fetching project details.",
-          severity: "error",
-        });
-      }
-    };
-
     fetchProject();
-  }, [projectId, applyProjectPayload]);
+  }, [fetchProject, projectId]);
 
   useEffect(() => {
     fetchSnapshots();
@@ -572,6 +572,47 @@ function ProjectDetailPage() {
 
     input.click();
   };
+
+  const handleImportOcrDataset = useCallback(() => {
+    if (!isOCRProject || !projectId || !project || isBlocked) return;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".txt,.tsv,.json,text/plain";
+    input.onchange = async (event: Event) => {
+      const target = event.target as HTMLInputElement;
+      const file = target.files?.[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append("project_id", projectId);
+      formData.append("dataset", file);
+      startBlocking("Importing OCR dataset...");
+      try {
+        const response = await axiosInstance.post(`ocr-images/upload_dataset/`, formData, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        });
+        await fetchProject();
+        const updatedImages = response.data?.summary?.updated_images ?? 0;
+        const totalBoxes = response.data?.summary?.annotations ?? 0;
+        setNotification({
+          open: true,
+          message: `Imported dataset for ${updatedImages} image(s) with ${totalBoxes} box(es).`,
+          severity: "success",
+        });
+      } catch (error) {
+        console.error("Error uploading OCR dataset:", error);
+        setNotification({
+          open: true,
+          message: "Failed to import OCR dataset.",
+          severity: "error",
+        });
+      } finally {
+        stopBlocking();
+      }
+    };
+    input.click();
+  }, [fetchProject, isBlocked, isOCRProject, project, projectId, startBlocking, stopBlocking]);
 
   const handleThumbnailClick = (index: number) => {
     if (isBlocked) return;
@@ -1689,6 +1730,17 @@ function ProjectDetailPage() {
             Save Project
           </Button>
         </Box>
+
+        {isOCRProject && (
+          <Button
+            variant="outlined"
+            color="info"
+            onClick={handleImportOcrDataset}
+            disabled={isBlocked || !project}
+          >
+            Import OCR Dataset
+          </Button>
+        )}
 
         {isOCRProject && (
           <Button
