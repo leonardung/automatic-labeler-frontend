@@ -20,6 +20,12 @@ interface ImageDisplayOCRProps {
   onSelectShapes: (ids: string[]) => void;
   onStartBlocking?: (message?: string) => void;
   onStopBlocking?: () => void;
+  onRegisterViewportControls?: (controls: {
+    zoomIn: () => void;
+    zoomOut: () => void;
+    toggleFit: () => void;
+    fitMode: "inside" | "outside";
+  }) => void;
 }
 
 const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
@@ -34,6 +40,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   endpointBase,
   categories,
   showTextLabels = true,
+  onRegisterViewportControls,
 }) => {
   const {
     imageRef,
@@ -43,6 +50,10 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     imgDimensions,
     isPanning,
     ShiftKeyPress,
+    fitMode,
+    zoomIn,
+    zoomOut,
+    toggleFitMode,
     handleWheel,
     handleMouseDown: handlePanMouseDown,
     handleMouseMove: handlePanMouseMove,
@@ -103,6 +114,15 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
 
     return () => resizeObserver.disconnect();
   }, []);
+
+  useEffect(() => {
+    onRegisterViewportControls?.({
+      zoomIn,
+      zoomOut,
+      toggleFit: toggleFitMode,
+      fitMode,
+    });
+  }, [fitMode, onRegisterViewportControls, toggleFitMode, zoomIn, zoomOut]);
 
   const parseColor = (color?: string) => {
     if (!color) return { r: 128, g: 135, b: 148, a: 1 };
@@ -398,46 +418,31 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     }
   };
 
-  useEffect(() => {
-    if (activeTool !== "rect") {
-      setRectPreviewPoint(null);
-    }
-    if (activeTool !== "polygon") {
-      setPolygonPreviewPoint(null);
-    }
-    if (activeTool !== "select") {
-      setSelectionStart(null);
-      setSelectionPoint(null);
-    }
-  }, [activeTool]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      const tag = target?.tagName;
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      if (disabled) return;
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName;
       const isEditable =
-        tag === "INPUT" ||
-        tag === "TEXTAREA" ||
-        tag === "SELECT" ||
+        tagName === "INPUT" ||
+        tagName === "TEXTAREA" ||
+        tagName === "SELECT" ||
         target?.getAttribute("contenteditable") === "true";
+
       if (isEditable) return;
 
-      if (e.key === "Escape") {
-        clearDraftShape();
-        setSelectionStart(null);
-        setSelectionPoint(null);
-        onSelectShapes([]);
-        return;
+      if (event.key === "Delete" || event.key === "Backspace") {
+        event.preventDefault();
+        deleteShape(selectedShapeIds);
       }
-      if (e.key === "Delete" || e.key === "Backspace") {
-        if (selectedShapeIds.length) {
-          deleteShape(selectedShapeIds);
-        }
-      }
-    };
+    },
+    [deleteShape, disabled, selectedShapeIds]
+  );
+
+  useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedShapeIds, deleteShape, clearDraftShape, onSelectShapes]);
+  }, [handleKeyDown]);
 
   useEffect(() => {
     const handleDocMouseDown = (e: MouseEvent) => {

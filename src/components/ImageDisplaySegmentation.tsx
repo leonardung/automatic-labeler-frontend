@@ -16,6 +16,12 @@ interface ImageDisplaySegmentationProps {
   disabled?: boolean;
   onStartBlocking?: (message?: string) => void;
   onStopBlocking?: () => void;
+  onRegisterViewportControls?: (controls: {
+    zoomIn: () => void;
+    zoomOut: () => void;
+    toggleFit: () => void;
+    fitMode: "inside" | "outside";
+  }) => void;
 }
 
 const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
@@ -30,6 +36,7 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
   disabled,
   onStartBlocking,
   onStopBlocking,
+  onRegisterViewportControls,
 }) => {
   const {
     imageRef,
@@ -41,6 +48,10 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
     ShiftKeyPress,
     keepZoomPan,
     handleToggleChange,
+    fitMode,
+    zoomIn,
+    zoomOut,
+    toggleFitMode,
     handleWheel,
     handleMouseDown,
     handleMouseMove,
@@ -88,6 +99,15 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
   useEffect(() => {
     setMaskVersion(Date.now());
   }, [image.id, image.masks]);
+
+  useEffect(() => {
+    onRegisterViewportControls?.({
+      zoomIn,
+      zoomOut,
+      toggleFit: toggleFitMode,
+      fitMode,
+    });
+  }, [fitMode, onRegisterViewportControls, toggleFitMode, zoomIn, zoomOut]);
 
   useEffect(() => {
     latestHighlightCategoryRef.current = highlightCategoryId ?? null;

@@ -29,6 +29,9 @@ import {
 import DeleteIcon from "@mui/icons-material/Delete";
 import UndoIcon from "@mui/icons-material/Undo";
 import RedoIcon from "@mui/icons-material/Redo";
+import ZoomInIcon from "@mui/icons-material/ZoomIn";
+import ZoomOutIcon from "@mui/icons-material/ZoomOut";
+import FitScreenIcon from "@mui/icons-material/FitScreen";
 import type { AlertColor } from "@mui/material";
 
 import ImageDisplaySegmentation from "../components/ImageDisplaySegmentation";
@@ -60,6 +63,12 @@ interface NotificationState {
 
 type OCRTool = "rect" | "polygon" | "select";
 type OcrHistoryEntry = { past: OCRAnnotation[][]; future: OCRAnnotation[][] };
+type ViewportControls = {
+  zoomIn: () => void;
+  zoomOut: () => void;
+  toggleFit: () => void;
+  fitMode: "inside" | "outside";
+};
 
 const cloneOcrAnnotations = (annotations: OCRAnnotation[] = []) =>
   annotations.map((ann) => ({
@@ -159,6 +168,8 @@ function ProjectDetailPage() {
   const [showOcrText, setShowOcrText] = useState(true);
   const progressIntervalRef = useRef<number | null>(null);
   const isPollingProgressRef = useRef(false);
+  const [segmentationViewportControls, setSegmentationViewportControls] = useState<ViewportControls | null>(null);
+  const [ocrViewportControls, setOcrViewportControls] = useState<ViewportControls | null>(null);
 
   const startLoading = useCallback(() => {
     setLoadingCounter((count) => count + 1);
@@ -1455,6 +1466,50 @@ function ProjectDetailPage() {
     navigate("/");
   };
 
+  const renderViewportControls = (controls: ViewportControls | null) => (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+      <Tooltip title="Zoom in">
+        <span>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<ZoomInIcon />}
+            onClick={controls?.zoomIn}
+            disabled={!controls || isBlocked}
+          >
+            Zoom
+          </Button>
+        </span>
+      </Tooltip>
+      <Tooltip title="Zoom out">
+        <span>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<ZoomOutIcon />}
+            onClick={controls?.zoomOut}
+            disabled={!controls || isBlocked}
+          >
+            Unzoom
+          </Button>
+        </span>
+      </Tooltip>
+      <Tooltip title={`Fit ${controls?.fitMode === "outside" ? "Outside" : "Inside"}`}>
+        <span>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<FitScreenIcon />}
+            onClick={controls?.toggleFit}
+            disabled={!controls || isBlocked}
+          >
+            Fit ({controls?.fitMode === "outside" ? "Out" : "In"})
+          </Button>
+        </span>
+      </Tooltip>
+    </Box>
+  );
+
   return (
     <Box
       sx={{
@@ -1796,6 +1851,7 @@ function ProjectDetailPage() {
                       Recognized Text
                     </Typography>
                   </Box>
+                  {renderViewportControls(ocrViewportControls)}
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                     <Tooltip title="Undo (Ctrl+Z)">
                       <span>
@@ -1840,6 +1896,7 @@ function ProjectDetailPage() {
                         onStopBlocking={stopBlocking}
                         endpointBase={imageEndpointBase}
                         showTextLabels={showOcrText}
+                        onRegisterViewportControls={setOcrViewportControls}
                       />
                     )}
                   </Box>
@@ -1920,6 +1977,9 @@ function ProjectDetailPage() {
                 </Box>
               </Box>
               <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
+                <Box display="flex" justifyContent="flex-end" mb={1}>
+                  {renderViewportControls(segmentationViewportControls)}
+                </Box>
                 <Box display="flex" flexGrow={1} overflow="hidden">
                   <Box flexGrow={1} display="flex" overflow="hidden">
                     <ImageDisplaySegmentation
@@ -1940,6 +2000,7 @@ function ProjectDetailPage() {
                           severity: "info",
                         })
                       }
+                      onRegisterViewportControls={setSegmentationViewportControls}
                     />
                   </Box>
                   <Box

@@ -1,7 +1,8 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import type { WheelEvent as ReactWheelEvent, MouseEvent as ReactMouseEvent } from "react";
 
 type Point = { x: number; y: number };
+type FitMode = "inside" | "outside";
 
 const useImageDisplay = (imageSrc: string | null) => {
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -18,6 +19,9 @@ const useImageDisplay = (imageSrc: string | null) => {
 
   const [ShiftKeyPress, setShiftKeyPress] = useState(false);
   const [keepZoomPan, setKeepZoomPan] = useState(false);
+  const [fitMode, setFitMode] = useState<FitMode>("inside");
+
+  const clampZoom = (value: number) => Math.max(0.05, Math.min(value, 5));
 
   const calculateDisplayParams = () => {
     if (!imageRef.current || !containerRef.current) {
@@ -31,41 +35,82 @@ const useImageDisplay = (imageSrc: string | null) => {
     setImgDimensions({ width: imgNaturalWidth, height: imgNaturalHeight });
   };
 
-  const initializeZoomPan = () => {
-    if (!imageRef.current || !containerRef.current) {
-      return;
-    }
+  const computeFit = useCallback(
+    (mode: FitMode) => {
+      if (!imageRef.current || !containerRef.current) {
+        return { zoom: 1, pan: { x: 0, y: 0 } };
+      }
 
-    const img = imageRef.current;
-    const container = containerRef.current;
+      const img = imageRef.current;
+      const containerRect = containerRef.current.getBoundingClientRect();
 
-    const containerRect = container.getBoundingClientRect();
+      const containerWidth = containerRect.width || 1;
+      const containerHeight = containerRect.height || 1;
 
-    const imgNaturalWidth = img.naturalWidth;
-    const imgNaturalHeight = img.naturalHeight;
+      const imgNaturalWidth = img.naturalWidth || 1;
+      const imgNaturalHeight = img.naturalHeight || 1;
 
-    const containerWidth = containerRect.width;
-    const containerHeight = containerRect.height;
+      const scaleX = containerWidth / imgNaturalWidth;
+      const scaleY = containerHeight / imgNaturalHeight;
 
-    const scaleX = containerWidth / imgNaturalWidth;
-    const scaleY = containerHeight / imgNaturalHeight;
+      const targetZoom = mode === "outside" ? Math.max(scaleX, scaleY) : Math.min(scaleX, scaleY);
 
-    const initialZoomLevel = Math.min(scaleX, scaleY);
+      const panX = (containerWidth - imgNaturalWidth * targetZoom) / 2;
+      const panY = (containerHeight - imgNaturalHeight * targetZoom) / 2;
 
-    const initialPanOffsetX =
-      (containerWidth - imgNaturalWidth * initialZoomLevel) / 2;
-    const initialPanOffsetY =
-      (containerHeight - imgNaturalHeight * initialZoomLevel) / 2;
+      return { zoom: targetZoom, pan: { x: panX, y: panY } };
+    },
+    []
+  );
 
-    setZoomLevel(initialZoomLevel);
-    setPanOffset({ x: initialPanOffsetX, y: initialPanOffsetY });
-  };
+  const applyFit = useCallback(
+    (mode: FitMode) => {
+      const params = computeFit(mode);
+      setFitMode(mode);
+      setZoomLevel(params.zoom);
+      setPanOffset(params.pan);
+    },
+    [computeFit]
+  );
+
+  const initializeZoomPan = useCallback(() => {
+    applyFit(fitMode);
+  }, [applyFit, fitMode]);
+
+  const zoomAtPoint = useCallback(
+    (factor: number, origin?: Point) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const originX = origin?.x ?? rect.width / 2;
+      const originY = origin?.y ?? rect.height / 2;
+
+      setZoomLevel((prevZoom) => {
+        const targetZoom = clampZoom(prevZoom * factor);
+        const zoomFactor = targetZoom / prevZoom;
+        setPanOffset((prevPan) => ({
+          x: originX - (originX - prevPan.x) * zoomFactor,
+          y: originY - (originY - prevPan.y) * zoomFactor,
+        }));
+        return targetZoom;
+      });
+    },
+    []
+  );
+
+  const zoomIn = useCallback(() => zoomAtPoint(1.15), [zoomAtPoint]);
+  const zoomOut = useCallback(() => zoomAtPoint(1 / 1.15), [zoomAtPoint]);
+  const toggleFitMode = useCallback(() => {
+    const nextMode: FitMode = fitMode === "inside" ? "outside" : "inside";
+    applyFit(nextMode);
+  }, [applyFit, fitMode]);
+  const fitInside = useCallback(() => applyFit("inside"), [applyFit]);
+  const fitOutside = useCallback(() => applyFit("outside"), [applyFit]);
 
   useEffect(() => {
     if (!keepZoomPan) {
       initializeZoomPan();
     }
-  }, [imageSrc, keepZoomPan]);
+  }, [imageSrc, keepZoomPan, initializeZoomPan]);
 
   useEffect(() => {
     calculateDisplayParams();
@@ -120,7 +165,7 @@ const useImageDisplay = (imageSrc: string | null) => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [imageSrc, keepZoomPan]);
+  }, [imageSrc, keepZoomPan, initializeZoomPan]);
 
   useEffect(() => {
     const img = imageRef.current;
@@ -141,7 +186,7 @@ const useImageDisplay = (imageSrc: string | null) => {
         img.removeEventListener("load", handleImageLoad);
       }
     };
-  }, [imageSrc, keepZoomPan]);
+  }, [imageSrc, keepZoomPan, initializeZoomPan]);
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
@@ -153,16 +198,7 @@ const useImageDisplay = (imageSrc: string | null) => {
     const y = clientY - containerRect.top;
 
     const delta = event.deltaY;
-    let newZoomLevel = zoomLevel * (delta > 0 ? 0.85 : 1.15);
-    newZoomLevel = Math.max(0.05, Math.min(newZoomLevel, 5));
-
-    const zoomFactor = newZoomLevel / zoomLevel;
-
-    const newPanOffsetX = x - (x - panOffset.x) * zoomFactor;
-    const newPanOffsetY = y - (y - panOffset.y) * zoomFactor;
-
-    setPanOffset({ x: newPanOffsetX, y: newPanOffsetY });
-    setZoomLevel(newZoomLevel);
+    zoomAtPoint(delta > 0 ? 0.85 : 1.15, { x, y });
   };
 
   const handleMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -205,6 +241,12 @@ const useImageDisplay = (imageSrc: string | null) => {
     ShiftKeyPress,
     keepZoomPan,
     handleToggleChange,
+    fitMode,
+    zoomIn,
+    zoomOut,
+    toggleFitMode,
+    fitInside,
+    fitOutside,
     handleWheel,
     handleMouseDown,
     handleMouseMove,
