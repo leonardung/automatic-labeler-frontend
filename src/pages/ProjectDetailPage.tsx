@@ -24,6 +24,7 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
+  Switch,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import UndoIcon from "@mui/icons-material/Undo";
@@ -155,6 +156,7 @@ function ProjectDetailPage() {
     { status: "pending" | "detecting" | "recognizing" | "done" | "error"; error?: string }
   >>({});
   const [isBulkOcrRunning, setIsBulkOcrRunning] = useState(false);
+  const [showOcrText, setShowOcrText] = useState(true);
   const progressIntervalRef = useRef<number | null>(null);
   const isPollingProgressRef = useRef(false);
 
@@ -1784,6 +1786,16 @@ function ProjectDetailPage() {
                     <ToggleButton value="rect">Rect (R)</ToggleButton>
                     <ToggleButton value="polygon">Polygon (P)</ToggleButton>
                   </ToggleButtonGroup>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+                    <Switch
+                      size="small"
+                      checked={showOcrText}
+                      onChange={(e) => setShowOcrText(e.target.checked)}
+                    />
+                    <Typography variant="body2" color="textSecondary">
+                      Recognized Text
+                    </Typography>
+                  </Box>
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                     <Tooltip title="Undo (Ctrl+Z)">
                       <span>
@@ -1827,6 +1839,7 @@ function ProjectDetailPage() {
                         onStartBlocking={startBlocking}
                         onStopBlocking={stopBlocking}
                         endpointBase={imageEndpointBase}
+                        showTextLabels={showOcrText}
                       />
                     )}
                   </Box>

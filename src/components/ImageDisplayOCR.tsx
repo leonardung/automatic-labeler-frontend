@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Box, Typography } from "@mui/material";
+import { Stage, Layer, Group, Line, Rect, Circle, Label as KonvaLabel, Tag, Text as KonvaText } from "react-konva";
+import type { KonvaEventObject } from "konva/lib/Node";
 import useImageDisplay from "./useImageDisplay";
 import type { ImageModel, OCRAnnotation, MaskCategory } from "../types";
 import axiosInstance from "../axiosInstance";
@@ -11,6 +13,7 @@ interface ImageDisplayOCRProps {
   onImageUpdated?: (image: ImageModel) => void;
   disabled?: boolean;
   activeTool: OCRTool;
+  showTextLabels?: boolean;
   endpointBase: string;
   categories: MaskCategory[];
   selectedShapeIds: string[];
@@ -30,6 +33,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   onStopBlocking,
   endpointBase,
   categories,
+  showTextLabels = true,
 }) => {
   const {
     imageRef,
@@ -55,6 +59,8 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   const [polygonPreviewPoint, setPolygonPreviewPoint] = useState<{ x: number; y: number } | null>(null);
   const [selectionStart, setSelectionStart] = useState<{ x: number; y: number } | null>(null);
   const [selectionPoint, setSelectionPoint] = useState<{ x: number; y: number } | null>(null);
+  const [stageSize, setStageSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  const [localAnnotations, setLocalAnnotations] = useState<OCRAnnotation[]>(image.ocr_annotations || []);
   const clearDraftShape = useCallback(() => {
     setCurrentPoints([]);
     setRectPreviewPoint(null);
@@ -65,7 +71,6 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     setDidMove(false);
   }, []);
 
-  const svgRef = useRef<SVGSVGElement | null>(null);
   const primarySelectedId = selectedShapeIds[0] || null;
   const categoryColorMap = useRef<Record<string, string>>({});
 
@@ -76,6 +81,28 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     });
     categoryColorMap.current = next;
   }, [categories]);
+
+  useEffect(() => {
+    setLocalAnnotations(image.ocr_annotations || []);
+  }, [image.id, image.ocr_annotations]);
+
+  useEffect(() => {
+    const updateStageSize = () => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      setStageSize({ width: rect.width, height: rect.height });
+    };
+
+    updateStageSize();
+
+    const resizeObserver = new ResizeObserver(updateStageSize);
+
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
+
+    return () => resizeObserver.disconnect();
+  }, []);
 
   const parseColor = (color?: string) => {
     if (!color) return { r: 128, g: 135, b: 148, a: 1 };
@@ -99,6 +126,19 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   const withAlpha = (color?: string, alpha = 0.25) => {
     const { r, g, b } = parseColor(color);
     return `rgba(${r},${g},${b},${alpha})`;
+  };
+
+  const flattenPoints = (points: { x: number; y: number }[]) => points.flatMap((p) => [p.x, p.y]);
+
+  const getBounds = (points: { x: number; y: number }[]) => {
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+
+    return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY };
   };
 
   const adjustRectPoints = (shape: OCRAnnotation, newCornerIndex: number, x: number, y: number) => {
@@ -150,9 +190,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   };
 
   const updateLocalShape = (id: string, updates: Partial<OCRAnnotation>) => {
-    if (!onImageUpdated) return;
-    const newAnnotations = image.ocr_annotations?.map((s) => (s.id === id ? { ...s, ...updates } : s)) || [];
-    onImageUpdated({ ...image, ocr_annotations: newAnnotations });
+    setLocalAnnotations((prev) => prev.map((s) => (s.id === id ? { ...s, ...updates } : s)));
   };
 
   const saveShape = async (shape: Partial<OCRAnnotation>) => {
@@ -163,16 +201,20 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
       const savedShapes = (response.data.shapes as OCRAnnotation[]) || [];
       const savedShape = savedShapes[0];
 
-      const newAnnotations = [...(image.ocr_annotations || [])];
-      const existingIndex = newAnnotations.findIndex((s) => s.id === savedShape.id);
-      if (existingIndex >= 0) {
-        newAnnotations[existingIndex] = savedShape;
-      } else {
-        newAnnotations.push(savedShape);
-      }
+      if (!savedShape) return;
 
-      onImageUpdated?.({ ...image, ocr_annotations: newAnnotations });
-      onSelectShapes(savedShape?.id ? [savedShape.id] : []);
+      setLocalAnnotations((prev) => {
+        const next = [...prev];
+        const existingIndex = next.findIndex((s) => s.id === savedShape.id);
+        if (existingIndex >= 0) {
+          next[existingIndex] = savedShape;
+        } else {
+          next.push(savedShape);
+        }
+        onImageUpdated?.({ ...image, ocr_annotations: next });
+        return next;
+      });
+      onSelectShapes(savedShape.id ? [savedShape.id] : []);
     } catch (error) {
       console.error("Error saving shape:", error);
     }
@@ -184,14 +226,17 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
       try {
         await axiosInstance.delete(`${endpointBase}/${image.id}/ocr_annotations/`, { data: { ids } });
         const toDelete = new Set(ids);
-        const newAnnotations = image.ocr_annotations?.filter((s) => !toDelete.has(s.id)) || [];
-        onImageUpdated?.({ ...image, ocr_annotations: newAnnotations });
+        setLocalAnnotations((prev) => {
+          const next = prev.filter((s) => !toDelete.has(s.id));
+          onImageUpdated?.({ ...image, ocr_annotations: next });
+          return next;
+        });
         onSelectShapes([]);
       } catch (error) {
         console.error("Error deleting shape:", error);
       }
     },
-    [image.id, image.ocr_annotations, onImageUpdated, onSelectShapes]
+    [endpointBase, image.id, onImageUpdated, onSelectShapes]
   );
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -264,7 +309,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     }
 
     if (draggedPointIndex !== null && primarySelectedId) {
-      const shape = image.ocr_annotations?.find((s) => s.id === primarySelectedId);
+      const shape = localAnnotations.find((s) => s.id === primarySelectedId);
       if (shape) {
         const newPoints =
           shape.type === "rect"
@@ -276,7 +321,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     } else if (draggedShapeId && dragStart) {
       const dx = x - dragStart.x;
       const dy = y - dragStart.y;
-      const shape = image.ocr_annotations?.find((s) => s.id === draggedShapeId);
+      const shape = localAnnotations.find((s) => s.id === draggedShapeId);
       if (shape) {
         const newPoints = shape.points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
         updateLocalShape(draggedShapeId, { points: newPoints });
@@ -299,7 +344,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
       const selMinY = Math.min(selectionStart.y, selectionPoint.y);
       const selMaxY = Math.max(selectionStart.y, selectionPoint.y);
       const ids =
-        image.ocr_annotations
+        localAnnotations
           ?.filter((shape) => {
             const xs = shape.points.map((p) => p.x);
             const ys = shape.points.map((p) => p.y);
@@ -318,7 +363,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     if ((draggedPointIndex !== null || draggedShapeId) && didMove) {
       const id = primarySelectedId || draggedShapeId;
       if (id) {
-        const shape = image.ocr_annotations?.find((s) => s.id === id);
+        const shape = localAnnotations.find((s) => s.id === id);
         if (shape) {
           saveShape(shape);
         }
@@ -412,6 +457,9 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     return "Click or drag to select. Shift + Drag to move. Drag corners to resize. Del to delete.";
   };
 
+  const stageWidth = Math.max(stageSize.width, 1);
+  const stageHeight = Math.max(stageSize.height, 1);
+
   return (
     <div
       ref={containerRef}
@@ -446,71 +494,107 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
         }}
       />
 
-      <svg
-        ref={svgRef}
+      <Stage
+        width={stageWidth}
+        height={stageHeight}
         style={{
           position: "absolute",
           top: 0,
           left: 0,
-          width: "100%",
-          height: "100%",
-          pointerEvents: "none",
         }}
       >
-        <g transform={`translate(${panOffset.x}, ${panOffset.y}) scale(${zoomLevel})`}>
-          {image.ocr_annotations?.map((shape) => {
+        <Layer
+          scaleX={zoomLevel}
+          scaleY={zoomLevel}
+          x={panOffset.x}
+          y={panOffset.y}
+          listening={!disabled}
+        >
+          {localAnnotations.map((shape) => {
             const isSelected = selectedShapeIds.includes(shape.id);
-            const pointsStr = shape.points.map((p) => `${p.x},${p.y}`).join(" ");
+            const bounds = getBounds(shape.points);
             const rawColor = categoryColorMap.current[shape.category || ""] || null;
             const hasCategory = Boolean(rawColor);
             const baseColor = hasCategory && rawColor ? rawColor : undefined;
             const fillColor = isSelected
               ? "rgba(0,255,0,0.50)"
               : withAlpha(baseColor || "rgba(128,135,148,1)", hasCategory ? 0.32 : 0.08);
-            const strokeColor = isSelected
-              ? "rgba(0,128,0,0.85)"
-              : withAlpha(baseColor, 0.9);
+            const strokeColor = isSelected ? "rgba(0,128,0,0.85)" : withAlpha(baseColor, 0.9);
+            const labelColor = strokeColor || "rgba(64,70,80,0.85)";
+            const handleShapeMouseDown = (evt: KonvaEventObject<MouseEvent>) => {
+              if (disabled || activeTool !== "select") return;
+              evt.cancelBubble = true;
+              evt.evt.stopPropagation();
+              const toggle = evt.evt.ctrlKey || evt.evt.metaKey;
+              let nextIds = selectedShapeIds;
+              if (toggle) {
+                nextIds = selectedShapeIds.includes(shape.id)
+                  ? selectedShapeIds.filter((id) => id !== shape.id)
+                  : [...selectedShapeIds, shape.id];
+              } else {
+                nextIds = [shape.id];
+              }
+              onSelectShapes(nextIds);
+              setDraggedShapeId(shape.id);
+              const { x, y } = screenToImage(evt.evt.clientX, evt.evt.clientY);
+              setDragStart({ x, y });
+              setDidMove(false);
+            };
+            const shapePoints = flattenPoints(shape.points);
+
             return (
-              <g key={shape.id} style={{ pointerEvents: "all" }}>
-                <polygon
-                  points={pointsStr}
-                  fill={fillColor}
-                  stroke={strokeColor}
-                  strokeWidth={2 / zoomLevel}
-                  onMouseDown={(e) => {
-                    if (activeTool === "select") {
-                      e.stopPropagation();
-                      const toggle = e.ctrlKey || e.metaKey;
-                      let nextIds = selectedShapeIds;
-                      if (toggle) {
-                        nextIds = selectedShapeIds.includes(shape.id)
-                          ? selectedShapeIds.filter((id) => id !== shape.id)
-                          : [...selectedShapeIds, shape.id];
-                      } else {
-                        nextIds = [shape.id];
-                      }
-                      onSelectShapes(nextIds);
-                      setDraggedShapeId(shape.id);
-                      const { x, y } = screenToImage(e.clientX, e.clientY);
-                      setDragStart({ x, y });
-                      setDidMove(false);
-                    }
-                  }}
-                />
+              <Group key={shape.id}>
+                {shape.type === "rect" ? (
+                  <Rect
+                    x={bounds.minX}
+                    y={bounds.minY}
+                    width={bounds.width}
+                    height={bounds.height}
+                    fill={fillColor}
+                    stroke={strokeColor}
+                    strokeWidth={2 / zoomLevel}
+                    onMouseDown={handleShapeMouseDown}
+                    perfectDrawEnabled={false}
+                  />
+                ) : (
+                  <Line
+                    points={shapePoints}
+                    closed
+                    fill={fillColor}
+                    stroke={strokeColor}
+                    strokeWidth={2 / zoomLevel}
+                    onMouseDown={handleShapeMouseDown}
+                    perfectDrawEnabled={false}
+                  />
+                )}
+                {showTextLabels && shape.text && (
+                  <Group
+                    x={bounds.minX}
+                    y={bounds.minY - 22 / zoomLevel}
+                    scaleX={1 / zoomLevel}
+                    scaleY={1 / zoomLevel}
+                    listening={false}
+                  >
+                    <KonvaLabel>
+                      <Tag fill={labelColor} cornerRadius={4} />
+                      <KonvaText text={shape.text} fontSize={13} padding={6} fill="#fff" />
+                    </KonvaLabel>
+                  </Group>
+                )}
                 {isSelected &&
                   shape.points.map((p, idx) => (
-                    <circle
+                    <Circle
                       key={idx}
-                      cx={p.x}
-                      cy={p.y}
-                      r={4 / zoomLevel}
+                      x={p.x}
+                      y={p.y}
+                      radius={4 / zoomLevel}
                       fill="white"
                       stroke="black"
                       strokeWidth={1 / zoomLevel}
-                      style={{ cursor: "pointer" }}
-                      onMouseDown={(e) => {
+                      onMouseDown={(evt) => {
                         if (activeTool === "select") {
-                          e.stopPropagation();
+                          evt.cancelBubble = true;
+                          evt.evt.stopPropagation();
                           setDraggedPointIndex(idx);
                           setDraggedShapeId(shape.id);
                           setDidMove(false);
@@ -518,44 +602,48 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
                       }}
                     />
                   ))}
-              </g>
+              </Group>
             );
           })}
 
           {currentPoints.length > 0 && (
-            <g style={{ pointerEvents: "none" }}>
+            <Group listening={false}>
               {activeTool === "rect" && currentPoints.length === 1 && (
                 <>
                   {rectPreviewPoint && (
-                    <polygon
-                      points={`${currentPoints[0].x},${currentPoints[0].y} ${rectPreviewPoint.x},${currentPoints[0].y} ${rectPreviewPoint.x},${rectPreviewPoint.y} ${currentPoints[0].x},${rectPreviewPoint.y}`}
+                    <Rect
+                      x={Math.min(currentPoints[0].x, rectPreviewPoint.x)}
+                      y={Math.min(currentPoints[0].y, rectPreviewPoint.y)}
+                      width={Math.abs(currentPoints[0].x - rectPreviewPoint.x)}
+                      height={Math.abs(currentPoints[0].y - rectPreviewPoint.y)}
                       fill="rgba(255,0,0,0.12)"
                       stroke="red"
                       strokeWidth={2 / zoomLevel}
+                      perfectDrawEnabled={false}
                     />
                   )}
-                  <circle cx={currentPoints[0].x} cy={currentPoints[0].y} r={3 / zoomLevel} fill="red" />
+                  <Circle x={currentPoints[0].x} y={currentPoints[0].y} radius={3 / zoomLevel} fill="red" />
                 </>
               )}
               {activeTool === "polygon" && (
                 <>
-                  <polyline
-                    points={[...currentPoints, ...(polygonPreviewPoint ? [polygonPreviewPoint] : [])]
-                      .map((p) => `${p.x},${p.y}`)
-                      .join(" ")}
-                    fill="none"
+                  <Line
+                    points={flattenPoints([...currentPoints, ...(polygonPreviewPoint ? [polygonPreviewPoint] : [])])}
+                    closed={false}
+                    fillEnabled={false}
                     stroke="red"
                     strokeWidth={2 / zoomLevel}
+                    perfectDrawEnabled={false}
                   />
                   {[...currentPoints, ...(polygonPreviewPoint ? [polygonPreviewPoint] : [])].map((p, idx) => (
-                    <circle key={idx} cx={p.x} cy={p.y} r={3 / zoomLevel} fill="red" />
+                    <Circle key={idx} x={p.x} y={p.y} radius={3 / zoomLevel} fill="red" />
                   ))}
                 </>
               )}
-            </g>
+            </Group>
           )}
           {activeTool === "select" && selectionStart && selectionPoint && (
-            <rect
+            <Rect
               x={Math.min(selectionStart.x, selectionPoint.x)}
               y={Math.min(selectionStart.y, selectionPoint.y)}
               width={Math.abs(selectionStart.x - selectionPoint.x)}
@@ -563,11 +651,12 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
               fill="rgba(96,165,250,0.15)"
               stroke="rgba(96,165,250,0.8)"
               strokeWidth={1 / zoomLevel}
-              strokeDasharray="4 3"
+              dash={[4, 3]}
+              listening={false}
             />
           )}
-        </g>
-      </svg>
+        </Layer>
+      </Stage>
 
       <Box
         sx={{
