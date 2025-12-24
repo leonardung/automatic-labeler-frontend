@@ -178,7 +178,7 @@ function ProjectDetailPage() {
     { status: "pending" | "detecting" | "recognizing" | "done" | "error"; error?: string }
   >>({});
   const [isBulkOcrRunning, setIsBulkOcrRunning] = useState(false);
-  const [showOcrText, setShowOcrText] = useState(true);
+  const [showOcrText, setShowOcrText] = useState(false);
   const progressIntervalRef = useRef<number | null>(null);
   const datasetProgressIntervalRef = useRef<number | null>(null);
   const isPollingProgressRef = useRef(false);
@@ -2022,7 +2022,7 @@ function ProjectDetailPage() {
                       onChange={(e) => setShowOcrText(e.target.checked)}
                     />
                     <Typography variant="body2" color="textSecondary">
-                      Recognized Text
+                      Show Recognized Text
                     </Typography>
                   </Box>
                   {renderViewportControls(ocrViewportControls)}
