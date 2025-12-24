@@ -141,7 +141,7 @@ function ProjectDetailPage() {
   const isOCRProject = projectType === "ocr" || projectType === "ocr_kie";
   const showOcrCategoryPanel = projectType === "ocr_kie";
   const imageEndpointBase = isOCRProject ? "ocr-images" : "images";
-  const [maxOcrCategoryHeight, setMaxOcrCategoryHeight] = useState<number>(320);
+  const [maxOcrCategoryHeight, setMaxOcrCategoryHeight] = useState<number>(290);
   const ocrCategoryPanelRef = useRef<HTMLDivElement | null>(null);
   const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>([]);
   const [loadDialogMode, setLoadDialogMode] = useState<"page" | "project" | null>(null);
@@ -465,8 +465,12 @@ function ProjectDetailPage() {
     const panel = ocrCategoryPanelRef.current;
     if (!panel) return;
     const contentHeight = panel.scrollHeight;
-    const bufferedHeight = contentHeight+5;
-    setMaxOcrCategoryHeight(Math.max(180, bufferedHeight));
+    const bufferedHeight = contentHeight + 5;
+    setMaxOcrCategoryHeight((prev) => {
+      const desired = Math.max(100, bufferedHeight);
+      // Only shrink to fit small lists; never auto-expand to avoid taking over the sidebar.
+      return desired < prev ? desired : prev;
+    });
   }, [categories, showOcrCategoryPanel]);
 
   useEffect(() => () => {
@@ -1948,8 +1952,9 @@ function ProjectDetailPage() {
                 {showOcrCategoryPanel && (
                   <Box
                     sx={{
-                      minHeight: 180,
+                      minHeight: 100,
                       maxHeight: maxOcrCategoryHeight,
+                      height: maxOcrCategoryHeight,
                       resize: "vertical",
                       overflow: "auto",
                       flexShrink: 0,
