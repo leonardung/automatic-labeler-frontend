@@ -160,6 +160,18 @@ function ProjectDetailPage() {
   const isBlocked = blockingOps > 0;
   const [propagationProgress, setPropagationProgress] = useState(0);
   const [isPropagating, setIsPropagating] = useState(false);
+  const [datasetImportProgress, setDatasetImportProgress] = useState<{
+    status: string;
+    percent: number;
+    processed: number;
+    total: number;
+  }>({
+    status: "idle",
+    percent: 0,
+    processed: 0,
+    total: 0,
+  });
+  const [isImportingDataset, setIsImportingDataset] = useState(false);
   const [bulkOcrStatus, setBulkOcrStatus] = useState<Record<
     number,
     { status: "pending" | "detecting" | "recognizing" | "done" | "error"; error?: string }
@@ -167,7 +179,9 @@ function ProjectDetailPage() {
   const [isBulkOcrRunning, setIsBulkOcrRunning] = useState(false);
   const [showOcrText, setShowOcrText] = useState(true);
   const progressIntervalRef = useRef<number | null>(null);
+  const datasetProgressIntervalRef = useRef<number | null>(null);
   const isPollingProgressRef = useRef(false);
+  const isPollingDatasetProgressRef = useRef(false);
   const [segmentationViewportControls, setSegmentationViewportControls] = useState<ViewportControls | null>(null);
   const [ocrViewportControls, setOcrViewportControls] = useState<ViewportControls | null>(null);
 
@@ -249,6 +263,50 @@ function ProjectDetailPage() {
     pollPropagationProgress();
     progressIntervalRef.current = window.setInterval(pollPropagationProgress, 1000);
   }, [clearProgressPolling, pollPropagationProgress]);
+
+  const clearDatasetProgressPolling = useCallback(() => {
+    if (datasetProgressIntervalRef.current !== null) {
+      clearInterval(datasetProgressIntervalRef.current);
+      datasetProgressIntervalRef.current = null;
+    }
+  }, []);
+
+  const pollDatasetImportProgress = useCallback(async () => {
+    if (!projectId || isPollingDatasetProgressRef.current) return;
+    isPollingDatasetProgressRef.current = true;
+    try {
+      const response = await axiosInstance.get<{
+        project_id?: number;
+        progress?: { status?: string; percent?: number; processed?: number; total?: number };
+      }>(`ocr-images/dataset_progress/`, { params: { project_id: projectId } });
+      const progress = response.data?.progress || {};
+      const statusText = String(progress.status || "idle");
+      const rawPercent = Number(progress.percent ?? 0);
+      const percent = Math.min(100, Math.max(0, Math.round(rawPercent)));
+      setDatasetImportProgress({
+        status: statusText,
+        percent,
+        processed: Number(progress.processed ?? 0),
+        total: Number(progress.total ?? 0),
+      });
+      if (statusText === "completed" || percent >= 100) {
+        clearDatasetProgressPolling();
+      }
+    } catch (error) {
+      console.error("Error polling dataset import progress:", error);
+    } finally {
+      isPollingDatasetProgressRef.current = false;
+    }
+  }, [clearDatasetProgressPolling, projectId]);
+
+  const startDatasetProgressPolling = useCallback(() => {
+    clearDatasetProgressPolling();
+    pollDatasetImportProgress();
+    datasetProgressIntervalRef.current = window.setInterval(
+      pollDatasetImportProgress,
+      1000
+    );
+  }, [clearDatasetProgressPolling, pollDatasetImportProgress]);
 
   const stopBlocking = useCallback(() => {
     setBlockingOps((count) => Math.max(0, count - 1));
@@ -412,7 +470,8 @@ function ProjectDetailPage() {
 
   useEffect(() => () => {
     clearProgressPolling();
-  }, [clearProgressPolling]);
+    clearDatasetProgressPolling();
+  }, [clearDatasetProgressPolling, clearProgressPolling]);
 
   useEffect(() => {
     if (!project || !isSegmentationProject || modelLoadedRef.current) {
@@ -585,6 +644,21 @@ function ProjectDetailPage() {
       const formData = new FormData();
       formData.append("project_id", projectId);
       formData.append("dataset", file);
+      setDatasetImportProgress({
+        status: "running",
+        percent: 0,
+        processed: 0,
+        total: 0,
+      });
+      setIsImportingDataset(true);
+      try {
+        await axiosInstance.get(`ocr-images/dataset_progress/`, {
+          params: { project_id: projectId, reset: true },
+        });
+      } catch (error) {
+        console.error("Error resetting dataset progress:", error);
+      }
+      startDatasetProgressPolling();
       startBlocking("Importing OCR dataset...");
       try {
         const response = await axiosInstance.post(`ocr-images/upload_dataset/`, formData, {
@@ -592,6 +666,11 @@ function ProjectDetailPage() {
             "Content-Type": "multipart/form-data",
           },
         });
+        setDatasetImportProgress((prev) => ({
+          ...prev,
+          status: "completed",
+          percent: 100,
+        }));
         await fetchProject();
         const updatedImages = response.data?.summary?.updated_images ?? 0;
         const totalBoxes = response.data?.summary?.annotations ?? 0;
@@ -608,11 +687,23 @@ function ProjectDetailPage() {
           severity: "error",
         });
       } finally {
+        clearDatasetProgressPolling();
+        setIsImportingDataset(false);
         stopBlocking();
       }
     };
     input.click();
-  }, [fetchProject, isBlocked, isOCRProject, project, projectId, startBlocking, stopBlocking]);
+  }, [
+    clearDatasetProgressPolling,
+    fetchProject,
+    isBlocked,
+    isOCRProject,
+    project,
+    projectId,
+    startBlocking,
+    startDatasetProgressPolling,
+    stopBlocking,
+  ]);
 
   const handleThumbnailClick = (index: number) => {
     if (isBlocked) return;
@@ -1587,16 +1678,37 @@ function ProjectDetailPage() {
           <Typography variant="body2" sx={{ opacity: 0.8 }}>
             Please wait...
           </Typography>
-          {(isPropagating || isBulkOcrRunning) && (
-            <Box sx={{ width: 320, display: "flex", flexDirection: "column", gap: 1.25 }}>
-              <LinearProgress
-                variant={isPropagating ? "determinate" : "indeterminate"}
-                value={isPropagating ? propagationProgress : undefined}
-                sx={{ width: "100%" }}
-              />
-              <Typography variant="caption" sx={{ textAlign: "center", color: "rgba(255,255,255,0.9)" }}>
-                {isPropagating ? `Propagation ${propagationProgress}% complete` : "Running OCR..."}
-              </Typography>
+          {(isPropagating || isBulkOcrRunning || isImportingDataset) && (
+            <Box sx={{ width: 360, display: "flex", flexDirection: "column", gap: 1.25 }}>
+              {isImportingDataset && (
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+                  <LinearProgress
+                    variant="determinate"
+                    value={datasetImportProgress.percent}
+                    sx={{ width: "100%" }}
+                  />
+                  <Typography variant="caption" sx={{ textAlign: "center", color: "rgba(255,255,255,0.9)" }}>
+                    {`Dataset import ${datasetImportProgress.percent}%`}
+                    {datasetImportProgress.total > 0
+                      ? ` (${datasetImportProgress.processed}/${datasetImportProgress.total} lines)`
+                      : datasetImportProgress.processed
+                      ? ` (${datasetImportProgress.processed} lines processed)`
+                      : ""}
+                  </Typography>
+                </Box>
+              )}
+              {(isPropagating || isBulkOcrRunning) && (
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+                  <LinearProgress
+                    variant={isPropagating ? "determinate" : "indeterminate"}
+                    value={isPropagating ? propagationProgress : undefined}
+                    sx={{ width: "100%" }}
+                  />
+                  <Typography variant="caption" sx={{ textAlign: "center", color: "rgba(255,255,255,0.9)" }}>
+                    {isPropagating ? `Propagation ${propagationProgress}% complete` : "Running OCR..."}
+                  </Typography>
+                </Box>
+              )}
               {isBulkOcrRunning && Object.keys(bulkOcrStatus).length > 0 && (
                 <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, mt: 0.5 }}>
                   {images.map((img) => {
