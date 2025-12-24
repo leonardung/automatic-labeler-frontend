@@ -134,6 +134,7 @@ function ProjectDetailPage() {
   const projectType: ProjectType = project?.type || "segmentation";
   const [ocrTool, setOcrTool] = useState<OCRTool>("select");
   const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
+  const [selectionScrollSignal, setSelectionScrollSignal] = useState(0);
   const currentImage = images[currentIndex];
   const isSegmentationProject =
     projectType === "segmentation" || projectType === "video_tracking_segmentation";
@@ -1289,6 +1290,15 @@ function ProjectDetailPage() {
     }
   }, [applyOcrAnnotationsForImage, currentImage, isApplyingHistory, isBlocked, isOCRProject, ocrHistory]);
 
+  const handleSelectShapesFromImage = useCallback((ids: string[]) => {
+    setSelectedShapeIds(ids);
+    setSelectionScrollSignal((prev) => prev + 1);
+  }, []);
+
+  const handleSelectShapesFromList = useCallback((ids: string[]) => {
+    setSelectedShapeIds(ids);
+  }, []);
+
   const handleRedo = useCallback(async () => {
     const image = currentImage;
     if (!isOCRProject || !image || isBlocked || isApplyingHistory) return;
@@ -1970,16 +1980,16 @@ function ProjectDetailPage() {
                       "& > *": { height: "100%" },
                     }}
                   >
-                    <OCRTextList
+                  <OCRTextList
                       image={currentImage}
                       categories={categories}
-                      activeCategoryId={activeCategoryId}
                       selectedShapeIds={selectedShapeIds}
-                      onSelectShapes={setSelectedShapeIds}
+                      onSelectShapes={handleSelectShapesFromList}
                       onImageUpdated={handleImageUpdated}
                       disabled={isBlocked}
                       endpointBase={imageEndpointBase}
                       showCategories={showOcrCategoryPanel}
+                      scrollSignal={selectionScrollSignal}
                     />
                   </Box>
                 )}
@@ -2053,7 +2063,7 @@ function ProjectDetailPage() {
                         activeTool={ocrTool}
                         categories={categories}
                         selectedShapeIds={selectedShapeIds}
-                        onSelectShapes={setSelectedShapeIds}
+                        onSelectShapes={handleSelectShapesFromImage}
                         onImageUpdated={handleImageUpdated}
                         disabled={isBlocked}
                         onStartBlocking={startBlocking}

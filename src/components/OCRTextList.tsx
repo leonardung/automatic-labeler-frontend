@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import {
   Box,
   Typography,
@@ -19,12 +19,12 @@ interface OCRTextListProps {
   image: ImageModel;
   categories: MaskCategory[];
   selectedShapeIds: string[];
-  activeCategoryId: number | null;
   onSelectShapes: (ids: string[]) => void;
   onImageUpdated: (image: ImageModel) => void;
   disabled?: boolean;
   endpointBase: string;
   showCategories: boolean;
+  scrollSignal: number;
 }
 
 const getRgbFromColor = (color: string) => {
@@ -57,14 +57,17 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
   image,
   categories,
   selectedShapeIds,
-  activeCategoryId,
   onSelectShapes,
   onImageUpdated,
   disabled,
   endpointBase,
   showCategories,
+  scrollSignal,
 }) => {
   const annotations = image.ocr_annotations || [];
+  const listRef = useRef<HTMLUListElement | null>(null);
+  const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const selectionRef = useRef<string[]>([]);
 
   const categoryMap = useMemo(
     () =>
@@ -146,6 +149,27 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
     );
   };
 
+  useEffect(() => {
+    selectionRef.current = selectedShapeIds;
+  }, [selectedShapeIds]);
+
+  useEffect(() => {
+    itemRefs.current = {};
+  }, [image.id]);
+
+  useEffect(() => {
+    const currentSelection = selectionRef.current;
+    if (!scrollSignal || !currentSelection.length) return;
+    const firstId = currentSelection[0];
+    const container = listRef.current;
+    const target = itemRefs.current[firstId];
+    if (!container || !target) return;
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const nextTop = targetRect.top - containerRect.top + container.scrollTop;
+    container.scrollTo({ top: nextTop, behavior: "auto" });
+  }, [scrollSignal, image.id]);
+
   return (
     <Paper
       elevation={3}
@@ -167,17 +191,16 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
         </Typography>
       </Box>
 
-      <List sx={{ flexGrow: 1, overflowY: "auto", p: 0 }}>
+      <List sx={{ flexGrow: 1, overflowY: "auto", p: 0 }} ref={listRef}>
         {annotations.map((shape, index) => {
           const isSelected = selectedShapeIds.includes(shape.id);
-          const matchesActiveCategory =
-            showCategories &&
-            activeCategoryId !== null &&
-            categories.find((c) => c.id === activeCategoryId)?.name === shape.category;
 
           return (
             <React.Fragment key={shape.id}>
               <ListItemButton
+                ref={(el) => {
+                  itemRefs.current[shape.id] = el;
+                }}
                 onClick={(e) => {
                   const toggle = e.ctrlKey || e.metaKey;
                   if (toggle) {
@@ -201,11 +224,7 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
                   py: 0.7,
                   px: 1.5,
                   borderLeft: isSelected ? "1px solid #60a5fa" : "2px solid transparent",
-                  bgcolor: isSelected
-                    ? "rgba(96,165,250,0.16)"
-                    : matchesActiveCategory
-                    ? "rgba(90,216,255,0.07)"
-                    : "transparent",
+                  bgcolor: isSelected ? "rgba(96,165,250,0.16)" : "transparent",
                   "&:hover": {
                     bgcolor: "rgba(255,255,255,0.04)",
                   },
