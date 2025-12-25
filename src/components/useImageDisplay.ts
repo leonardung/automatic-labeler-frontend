@@ -19,6 +19,8 @@ const useImageDisplay = (imageSrc: string | null, options: UseImageDisplayOption
   // Refs keep the latest values handy inside callbacks.
   const zoomRef = useRef<number>(1);
   const panRef = useRef<Point>({ x: 0, y: 0 });
+  const panStartRef = useRef<Point | null>(null);
+  const panOriginRef = useRef<Point>({ x: 0, y: 0 });
 
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [panOffset, setPanOffset] = useState<Point>({ x: 0, y: 0 });
@@ -27,8 +29,6 @@ const useImageDisplay = (imageSrc: string | null, options: UseImageDisplayOption
     height: 0,
   });
   const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState<Point>({ x: 0, y: 0 });
-
   const [panKeyPressed, setPanKeyPressed] = useState(false);
   const [keepZoomPan, setKeepZoomPan] = useState(false);
   const [fitMode, setFitMode] = useState<FitMode>("inside");
@@ -37,11 +37,10 @@ const useImageDisplay = (imageSrc: string | null, options: UseImageDisplayOption
   const isPanModifierActive = (event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) =>
     panModifierKey === "shift" ? event.shiftKey : event.ctrlKey || event.metaKey;
   const applyPanDelta = useCallback((deltaX: number, deltaY: number) => {
-    const scale = zoomRef.current || 1;
     setPanOffset((prevPanOffset) => {
       const nextPan = {
-        x: prevPanOffset.x + deltaX / scale,
-        y: prevPanOffset.y + deltaY / scale,
+        x: prevPanOffset.x + deltaX,
+        y: prevPanOffset.y + deltaY,
       };
       panRef.current = nextPan;
       return nextPan;
@@ -279,21 +278,29 @@ const useImageDisplay = (imageSrc: string | null, options: UseImageDisplayOption
     }
 
     setIsPanning(true);
-    setPanStart({ x: event.clientX, y: event.clientY });
+    panStartRef.current = { x: event.clientX, y: event.clientY };
+    panOriginRef.current = panRef.current;
   };
 
   const handleMouseMove = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!isPanning) return;
+    if (!panStartRef.current) return;
 
-    const deltaX = event.clientX - panStart.x;
-    const deltaY = event.clientY - panStart.y;
+    const deltaX = event.clientX - panStartRef.current.x;
+    const deltaY = event.clientY - panStartRef.current.y;
 
-    setPanStart({ x: event.clientX, y: event.clientY });
-    applyPanDelta(deltaX, deltaY);
+    const nextPan = {
+      x: panOriginRef.current.x + deltaX,
+      y: panOriginRef.current.y + deltaY,
+    };
+
+    panRef.current = nextPan;
+    setPanOffset(nextPan);
   };
 
   const handleMouseUp = () => {
     setIsPanning(false);
+    panStartRef.current = null;
   };
 
   const handleToggleChange = () => {
