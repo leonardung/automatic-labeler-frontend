@@ -49,7 +49,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     panOffset,
     imgDimensions,
     isPanning,
-    ShiftKeyPress,
+    panKeyPressed,
     fitMode,
     zoomIn,
     zoomOut,
@@ -59,7 +59,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     handleMouseMove: handlePanMouseMove,
     handleMouseUp: handlePanMouseUp,
     calculateDisplayParams,
-  } = useImageDisplay(image.image);
+  } = useImageDisplay(image.image, { panModifierKey: "ctrl", wheelBehavior: "scrollPanCtrlZoom" });
 
   const [currentPoints, setCurrentPoints] = useState<{ x: number; y: number }[]>([]);
   const [draggedPointIndex, setDraggedPointIndex] = useState<number | null>(null);
@@ -261,7 +261,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (disabled) return;
-    if (ShiftKeyPress) {
+    if (panKeyPressed || e.ctrlKey || e.metaKey) {
       handlePanMouseDown(e as any);
       return;
     }
@@ -459,7 +459,7 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
   const renderHelperText = () => {
     if (activeTool === "rect") return "Click start and end points for rectangle.";
     if (activeTool === "polygon") return "Click points. Double click to finish.";
-    return "Click or drag to select. Shift + Drag to move. Drag corners to resize. Del to delete.";
+    return "Click or drag to select. Ctrl + Drag to move. Drag corners to resize. Del to delete.";
   };
 
   const stageWidth = Math.max(stageSize.width, 1);

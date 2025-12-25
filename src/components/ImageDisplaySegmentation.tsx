@@ -45,7 +45,7 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
     panOffset,
     imgDimensions,
     isPanning,
-    ShiftKeyPress,
+    panKeyPressed,
     keepZoomPan,
     handleToggleChange,
     fitMode,
@@ -461,7 +461,7 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
           overflow: "hidden",
           cursor: disabled
             ? "not-allowed"
-            : ShiftKeyPress
+            : panKeyPressed
               ? isPanning
                 ? "grabbing"
                 : "grab"

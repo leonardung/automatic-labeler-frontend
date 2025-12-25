@@ -3,8 +3,16 @@ import type { WheelEvent as ReactWheelEvent, MouseEvent as ReactMouseEvent } fro
 
 type Point = { x: number; y: number };
 type FitMode = "inside" | "outside";
+type ModifierKey = "shift" | "ctrl";
+type WheelBehavior = "zoom" | "scrollPanCtrlZoom";
 
-const useImageDisplay = (imageSrc: string | null) => {
+interface UseImageDisplayOptions {
+  panModifierKey?: ModifierKey;
+  wheelBehavior?: WheelBehavior;
+}
+
+const useImageDisplay = (imageSrc: string | null, options: UseImageDisplayOptions = {}) => {
+  const { panModifierKey = "shift", wheelBehavior = "zoom" } = options;
   const imageRef = useRef<HTMLImageElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Refs keep the latest values handy inside callbacks.
@@ -20,11 +28,23 @@ const useImageDisplay = (imageSrc: string | null) => {
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState<Point>({ x: 0, y: 0 });
 
-  const [ShiftKeyPress, setShiftKeyPress] = useState(false);
+  const [panKeyPressed, setPanKeyPressed] = useState(false);
   const [keepZoomPan, setKeepZoomPan] = useState(false);
   const [fitMode, setFitMode] = useState<FitMode>("inside");
 
   const clampZoom = (value: number) => Math.max(0.05, Math.min(value, 5));
+  const isPanModifierActive = (event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) =>
+    panModifierKey === "shift" ? event.shiftKey : event.ctrlKey || event.metaKey;
+  const applyPanDelta = (deltaX: number, deltaY: number) => {
+    setPanOffset((prevPanOffset) => {
+      const nextPan = {
+        x: prevPanOffset.x + deltaX,
+        y: prevPanOffset.y + deltaY,
+      };
+      panRef.current = nextPan;
+      return nextPan;
+    });
+  };
 
   useEffect(() => {
     zoomRef.current = zoomLevel;
@@ -135,14 +155,18 @@ const useImageDisplay = (imageSrc: string | null) => {
     calculateDisplayParams();
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Shift") {
-        setShiftKeyPress(true);
+      const isPanKey =
+        panModifierKey === "shift" ? event.key === "Shift" : event.key === "Control" || event.key === "Meta";
+      if (isPanKey) {
+        setPanKeyPressed(true);
       }
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
-      if (event.key === "Shift") {
-        setShiftKeyPress(false);
+      const isPanKey =
+        panModifierKey === "shift" ? event.key === "Shift" : event.key === "Control" || event.key === "Meta";
+      if (isPanKey) {
+        setPanKeyPressed(false);
       }
     };
 
@@ -184,7 +208,7 @@ const useImageDisplay = (imageSrc: string | null) => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [imageSrc, keepZoomPan, initializeZoomPan]);
+  }, [imageSrc, keepZoomPan, initializeZoomPan, panModifierKey]);
 
   useEffect(() => {
     const img = imageRef.current;
@@ -209,21 +233,29 @@ const useImageDisplay = (imageSrc: string | null) => {
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
-    event.preventDefault();
+    if (event.cancelable) {
+      event.preventDefault();
+    }
 
-    const { clientX, clientY } = event;
+    const { clientX, clientY, deltaY, deltaX, ctrlKey, metaKey } = event;
+
+    if (wheelBehavior === "scrollPanCtrlZoom" && !(ctrlKey || metaKey)) {
+      applyPanDelta(-deltaX, -deltaY);
+      return;
+    }
 
     const containerRect = containerRef.current.getBoundingClientRect();
     const x = clientX - containerRect.left;
     const y = clientY - containerRect.top;
 
-    const delta = event.deltaY;
-    zoomAtPoint(delta > 0 ? 0.85 : 1.15, { x, y });
+    zoomAtPoint(deltaY > 0 ? 0.85 : 1.15, { x, y });
   };
 
   const handleMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!event.shiftKey) return;
-    event.preventDefault();
+    if (!isPanModifierActive(event)) return;
+    if (event.cancelable) {
+      event.preventDefault();
+    }
 
     setIsPanning(true);
     setPanStart({ x: event.clientX, y: event.clientY });
@@ -262,7 +294,7 @@ const useImageDisplay = (imageSrc: string | null) => {
     panOffset,
     imgDimensions,
     isPanning,
-    ShiftKeyPress,
+    panKeyPressed,
     keepZoomPan,
     handleToggleChange,
     fitMode,
