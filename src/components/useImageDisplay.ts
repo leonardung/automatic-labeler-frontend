@@ -34,18 +34,54 @@ const useImageDisplay = (imageSrc: string | null, options: UseImageDisplayOption
   const [fitMode, setFitMode] = useState<FitMode>("inside");
 
   const clampZoom = (value: number) => Math.max(0.05, Math.min(value, 5));
+  const clampPan = useCallback(
+    (pan: Point, { clampX = false, clampY = false }: { clampX?: boolean; clampY?: boolean } = {}) => {
+      if (!containerRef.current) return pan;
+      const rect = containerRef.current.getBoundingClientRect();
+      const containerWidth = rect.width || 1;
+      const containerHeight = rect.height || 1;
+
+      const zoom = zoomRef.current || 1;
+      const scaledWidth = imgDimensions.width * zoom;
+      const scaledHeight = imgDimensions.height * zoom;
+
+      let x = pan.x;
+      let y = pan.y;
+
+      if (clampX && scaledWidth >= containerWidth) {
+        const minX = containerWidth - scaledWidth;
+        const maxX = 0;
+        x = Math.min(Math.max(x, minX), maxX);
+      }
+
+      if (clampY && scaledHeight >= containerHeight) {
+        const minY = containerHeight - scaledHeight;
+        const maxY = 0;
+        y = Math.min(Math.max(y, minY), maxY);
+      }
+
+      return { x, y };
+    },
+    [imgDimensions.height, imgDimensions.width]
+  );
   const isPanModifierActive = (event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) =>
     panModifierKey === "shift" ? event.shiftKey : event.ctrlKey || event.metaKey;
-  const applyPanDelta = useCallback((deltaX: number, deltaY: number) => {
-    setPanOffset((prevPanOffset) => {
-      const nextPan = {
-        x: prevPanOffset.x + deltaX,
-        y: prevPanOffset.y + deltaY,
-      };
-      panRef.current = nextPan;
-      return nextPan;
-    });
-  }, []);
+  const applyPanDelta = useCallback(
+    (deltaX: number, deltaY: number, clamp?: { clampX?: boolean; clampY?: boolean }) => {
+      setPanOffset((prevPanOffset) => {
+        let nextPan = {
+          x: prevPanOffset.x + deltaX,
+          y: prevPanOffset.y + deltaY,
+        };
+        if (clamp?.clampX || clamp?.clampY) {
+          nextPan = clampPan(nextPan, clamp);
+        }
+        panRef.current = nextPan;
+        return nextPan;
+      });
+    },
+    [clampPan]
+  );
 
   useEffect(() => {
     zoomRef.current = zoomLevel;
@@ -246,7 +282,7 @@ const useImageDisplay = (imageSrc: string | null, options: UseImageDisplayOption
       const { clientX, clientY, deltaY, deltaX, ctrlKey, metaKey } = event;
 
       if (wheelBehavior === "scrollPanCtrlZoom" && !(ctrlKey || metaKey)) {
-        applyPanDelta(-deltaX, -deltaY);
+        applyPanDelta(-deltaX, -deltaY, { clampX: true, clampY: true });
         return;
       }
 
