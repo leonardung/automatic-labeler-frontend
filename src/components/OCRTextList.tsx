@@ -217,12 +217,13 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
                 sx={{
                   display: "grid",
                   gridTemplateColumns: showCategories
-                    ? "24px minmax(0, 1fr) auto 24px"
-                    : "24px minmax(0, 1fr) 24px",
+                    ? "30px minmax(0, 1fr) auto 24px"
+                    : "30px minmax(0, 1fr) 24px",
                   alignItems: "center",
                   gap: 0.6,
                   py: 0.7,
-                  px: 1.5,
+                  pl: 0.8,
+                  pr: 1,
                   borderLeft: isSelected ? "1px solid #60a5fa" : "2px solid transparent",
                   bgcolor: isSelected ? "rgba(96,165,250,0.16)" : "transparent",
                   "&:hover": {
