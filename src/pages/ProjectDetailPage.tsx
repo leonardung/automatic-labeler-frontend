@@ -69,6 +69,7 @@ type ViewportControls = {
   toggleFit: () => void;
   fitMode: "inside" | "outside";
 };
+type BulkOcrStage = "pending" | "detecting" | "recognizing" | "classifying" | "done" | "error";
 
 const cloneOcrAnnotations = (annotations: OCRAnnotation[] = []) =>
   annotations.map((ann) => ({
@@ -175,7 +176,7 @@ function ProjectDetailPage() {
   const [isImportingDataset, setIsImportingDataset] = useState(false);
   const [bulkOcrStatus, setBulkOcrStatus] = useState<Record<
     number,
-    { status: "pending" | "detecting" | "recognizing" | "done" | "error"; error?: string }
+    { status: BulkOcrStage; error?: string }
   >>({});
   const [isBulkOcrRunning, setIsBulkOcrRunning] = useState(false);
   const [showOcrText, setShowOcrText] = useState(false);
@@ -1371,6 +1372,72 @@ function ProjectDetailPage() {
     handleImageUpdated,
   ]);
 
+  const runFullInferenceForImage = useCallback(
+    async (
+      img: ImageModel,
+      onStatusChange?: (status: BulkOcrStage) => void
+    ): Promise<{ shapes: any[]; categories?: string[] }> => {
+      if (!img.id) {
+        throw new Error("Image is missing an id.");
+      }
+
+      onStatusChange?.("detecting");
+      const detRes = await axiosInstance.post(`${imageEndpointBase}/${img.id}/detect_regions/`);
+      let shapes = detRes.data.shapes || [];
+
+      onStatusChange?.("recognizing");
+      const recRes = await axiosInstance.post(`${imageEndpointBase}/${img.id}/recognize_text/`, {
+        shapes,
+      });
+      shapes = recRes.data.shapes || shapes;
+      let categoriesPayload = recRes.data.categories;
+
+      const shouldClassify = projectType === "ocr_kie" && shapes.length > 0;
+      const needsClassification = shouldClassify && shapes.some((shape: any) => !shape.category);
+      if (needsClassification) {
+        onStatusChange?.("classifying");
+        const classRes = await axiosInstance.post(
+          `${imageEndpointBase}/${img.id}/classify_kie/`,
+          { shapes, categories: categories.map((cat) => cat.name) }
+        );
+        shapes = classRes.data.shapes || shapes;
+        categoriesPayload = classRes.data.categories || categoriesPayload;
+      }
+
+      return { shapes, categories: categoriesPayload };
+    },
+    [categories, imageEndpointBase, projectType]
+  );
+
+  const handleFullInference = useCallback(async () => {
+    if (isBlocked) return;
+    const image = images[currentIndex];
+    if (!image || !image.id) return;
+
+    try {
+      startBlocking("Running full inference...");
+      const result = await runFullInferenceForImage(image);
+      handleImageUpdated({ ...image, ocr_annotations: result.shapes || [] });
+    } catch (error) {
+      console.error("Error running full inference:", error);
+      setNotification({
+        open: true,
+        message: "Full inference failed for this page.",
+        severity: "error",
+      });
+    } finally {
+      stopBlocking();
+    }
+  }, [
+    currentIndex,
+    handleImageUpdated,
+    images,
+    isBlocked,
+    runFullInferenceForImage,
+    startBlocking,
+    stopBlocking,
+  ]);
+
   const handleBulkDetectRecognize = useCallback(async () => {
     if (isBlocked) return;
     const targets = images.filter((img) => img.id);
@@ -1384,41 +1451,25 @@ function ProjectDetailPage() {
       )
     );
 
-    startBlocking("Running OCR on all pages...");
+    startBlocking("Running full inference on all pages...");
 
     try {
       for (const img of targets) {
         if (!img.id) continue;
         setBulkOcrStatus((prev) => ({ ...prev, [img.id!]: { status: "detecting" } }));
-        let shapes: any[] = [];
         try {
-          const detRes = await axiosInstance.post(
-            `${imageEndpointBase}/${img.id}/detect_regions/`
+          const result = await runFullInferenceForImage(img, (status) =>
+            setBulkOcrStatus((prev) => ({ ...prev, [img.id!]: { status } }))
           );
-          shapes = detRes.data.shapes || [];
-        } catch (error) {
-          console.error("Bulk detect failed for image", img.id, error);
-          setBulkOcrStatus((prev) => ({
-            ...prev,
-            [img.id!]: { status: "error", error: "detect failed" },
-          }));
-          continue;
-        }
-
-        setBulkOcrStatus((prev) => ({ ...prev, [img.id!]: { status: "recognizing" } }));
-        try {
-          const recRes = await axiosInstance.post(
-            `${imageEndpointBase}/${img.id}/recognize_text/`,
-            { shapes }
-          );
-          const recShapes = recRes.data.shapes || shapes;
-          handleImageUpdated({ ...img, ocr_annotations: recShapes });
+          if (result?.shapes) {
+            handleImageUpdated({ ...img, ocr_annotations: result.shapes });
+          }
           setBulkOcrStatus((prev) => ({ ...prev, [img.id!]: { status: "done" } }));
         } catch (error) {
-          console.error("Bulk recognize failed for image", img.id, error);
+          console.error("Bulk inference failed for image", img.id, error);
           setBulkOcrStatus((prev) => ({
             ...prev,
-            [img.id!]: { status: "error", error: "recognize failed" },
+            [img.id!]: { status: "error", error: "inference failed" },
           }));
         }
       }
@@ -1431,6 +1482,7 @@ function ProjectDetailPage() {
     imageEndpointBase,
     images,
     isBlocked,
+    runFullInferenceForImage,
     startBlocking,
     stopBlocking,
   ]);
@@ -1939,15 +1991,26 @@ function ProjectDetailPage() {
                   />
                 )}
                 {isOCRProject && (
-                  <Button
-                    variant="outlined"
-                    color="secondary"
-                    onClick={handleBulkDetectRecognize}
-                    disabled={isBlocked || isBulkOcrRunning || images.length === 0}
-                    sx={{ alignSelf: "flex-start" }}
-                  >
-                    Detect & Recognize All
-                  </Button>
+                  <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                    <Button
+                      variant="contained"
+                      color="secondary"
+                      onClick={handleFullInference}
+                      disabled={isBlocked || !currentImage}
+                      fullWidth
+                    >
+                      Full Inference
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      color="secondary"
+                      onClick={handleBulkDetectRecognize}
+                      disabled={isBlocked || isBulkOcrRunning || images.length === 0}
+                      fullWidth
+                    >
+                      Full Inference On All Pages
+                    </Button>
+                  </Box>
                 )}
                 {showOcrCategoryPanel && (
                   <Box
