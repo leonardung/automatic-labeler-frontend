@@ -37,10 +37,11 @@ const useImageDisplay = (imageSrc: string | null, options: UseImageDisplayOption
   const isPanModifierActive = (event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) =>
     panModifierKey === "shift" ? event.shiftKey : event.ctrlKey || event.metaKey;
   const applyPanDelta = useCallback((deltaX: number, deltaY: number) => {
+    const scale = zoomRef.current || 1;
     setPanOffset((prevPanOffset) => {
       const nextPan = {
-        x: prevPanOffset.x + deltaX,
-        y: prevPanOffset.y + deltaY,
+        x: prevPanOffset.x + deltaX / scale,
+        y: prevPanOffset.y + deltaY / scale,
       };
       panRef.current = nextPan;
       return nextPan;
@@ -288,15 +289,7 @@ const useImageDisplay = (imageSrc: string | null, options: UseImageDisplayOption
     const deltaY = event.clientY - panStart.y;
 
     setPanStart({ x: event.clientX, y: event.clientY });
-
-    setPanOffset((prevPanOffset) => {
-      const nextPan = {
-        x: prevPanOffset.x + deltaX,
-        y: prevPanOffset.y + deltaY,
-      };
-      panRef.current = nextPan;
-      return nextPan;
-    });
+    applyPanDelta(deltaX, deltaY);
   };
 
   const handleMouseUp = () => {
