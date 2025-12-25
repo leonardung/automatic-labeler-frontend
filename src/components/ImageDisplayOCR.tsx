@@ -54,12 +54,15 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
     zoomIn,
     zoomOut,
     toggleFitMode,
-    handleWheel,
     handleMouseDown: handlePanMouseDown,
     handleMouseMove: handlePanMouseMove,
     handleMouseUp: handlePanMouseUp,
     calculateDisplayParams,
-  } = useImageDisplay(image.image, { panModifierKey: "ctrl", wheelBehavior: "scrollPanCtrlZoom" });
+  } = useImageDisplay(image.image, {
+    panModifierKey: "ctrl",
+    wheelBehavior: "scrollPanCtrlZoom",
+    wheelEnabled: !disabled,
+  });
 
   const [currentPoints, setCurrentPoints] = useState<{ x: number; y: number }[]>([]);
   const [draggedPointIndex, setDraggedPointIndex] = useState<number | null>(null);
@@ -476,7 +479,6 @@ const ImageDisplayOCR: React.FC<ImageDisplayOCRProps> = ({
         cursor: activeTool === "select" ? "default" : "crosshair",
         userSelect: "none",
       }}
-      onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}

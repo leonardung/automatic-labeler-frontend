@@ -52,12 +52,11 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
     zoomIn,
     zoomOut,
     toggleFitMode,
-    handleWheel,
     handleMouseDown,
     handleMouseMove,
     handleMouseUp,
     calculateDisplayParams,
-  } = useImageDisplay(image.image);
+  } = useImageDisplay(image.image, { wheelEnabled: !disabled });
 
   const [points, setPoints] = useState<SegmentationPoint[]>([]);
 
@@ -467,7 +466,6 @@ const ImageDisplaySegmentation: React.FC<ImageDisplaySegmentationProps> = ({
                 : "grab"
               : "crosshair",
         }}
-        onWheel={disabled ? undefined : handleWheel}
         onMouseDown={(e) => {
           if (disabled) return;
           if (e.shiftKey) {

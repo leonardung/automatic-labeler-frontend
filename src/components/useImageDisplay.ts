@@ -9,10 +9,11 @@ type WheelBehavior = "zoom" | "scrollPanCtrlZoom";
 interface UseImageDisplayOptions {
   panModifierKey?: ModifierKey;
   wheelBehavior?: WheelBehavior;
+  wheelEnabled?: boolean;
 }
 
 const useImageDisplay = (imageSrc: string | null, options: UseImageDisplayOptions = {}) => {
-  const { panModifierKey = "shift", wheelBehavior = "zoom" } = options;
+  const { panModifierKey = "shift", wheelBehavior = "zoom", wheelEnabled = true } = options;
   const imageRef = useRef<HTMLImageElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Refs keep the latest values handy inside callbacks.
@@ -35,7 +36,7 @@ const useImageDisplay = (imageSrc: string | null, options: UseImageDisplayOption
   const clampZoom = (value: number) => Math.max(0.05, Math.min(value, 5));
   const isPanModifierActive = (event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) =>
     panModifierKey === "shift" ? event.shiftKey : event.ctrlKey || event.metaKey;
-  const applyPanDelta = (deltaX: number, deltaY: number) => {
+  const applyPanDelta = useCallback((deltaX: number, deltaY: number) => {
     setPanOffset((prevPanOffset) => {
       const nextPan = {
         x: prevPanOffset.x + deltaX,
@@ -44,7 +45,7 @@ const useImageDisplay = (imageSrc: string | null, options: UseImageDisplayOption
       panRef.current = nextPan;
       return nextPan;
     });
-  };
+  }, []);
 
   useEffect(() => {
     zoomRef.current = zoomLevel;
@@ -231,25 +232,44 @@ const useImageDisplay = (imageSrc: string | null, options: UseImageDisplayOption
     };
   }, [imageSrc, keepZoomPan, initializeZoomPan]);
 
-  const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
-    if (!containerRef.current) return;
-    if (event.cancelable) {
-      event.preventDefault();
-    }
+  const handleWheel = useCallback(
+    (event: ReactWheelEvent<HTMLDivElement> | WheelEvent) => {
+      if (!containerRef.current) return;
+      if (event.cancelable) {
+        try {
+          event.preventDefault();
+        } catch {
+          // Some environments attach wheel listeners as passive; ignore if preventDefault is disallowed.
+        }
+      }
 
-    const { clientX, clientY, deltaY, deltaX, ctrlKey, metaKey } = event;
+      const { clientX, clientY, deltaY, deltaX, ctrlKey, metaKey } = event;
 
-    if (wheelBehavior === "scrollPanCtrlZoom" && !(ctrlKey || metaKey)) {
-      applyPanDelta(-deltaX, -deltaY);
-      return;
-    }
+      if (wheelBehavior === "scrollPanCtrlZoom" && !(ctrlKey || metaKey)) {
+        applyPanDelta(-deltaX, -deltaY);
+        return;
+      }
 
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const x = clientX - containerRect.left;
-    const y = clientY - containerRect.top;
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const x = clientX - containerRect.left;
+      const y = clientY - containerRect.top;
 
-    zoomAtPoint(deltaY > 0 ? 0.85 : 1.15, { x, y });
-  };
+      zoomAtPoint(deltaY > 0 ? 0.85 : 1.15, { x, y });
+    },
+    [applyPanDelta, wheelBehavior, zoomAtPoint]
+  );
+
+  useEffect(() => {
+    const containerEl = containerRef.current;
+    if (!containerEl || !wheelEnabled) return;
+
+    const listener = (e: WheelEvent) => handleWheel(e);
+    containerEl.addEventListener("wheel", listener, { passive: false });
+
+    return () => {
+      containerEl.removeEventListener("wheel", listener);
+    };
+  }, [handleWheel, wheelEnabled]);
 
   const handleMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (!isPanModifierActive(event)) return;
