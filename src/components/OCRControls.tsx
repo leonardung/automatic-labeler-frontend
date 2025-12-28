@@ -16,7 +16,7 @@ import {
 import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
 import TextFieldsIcon from "@mui/icons-material/TextFields";
 import CategoryIcon from "@mui/icons-material/Category";
-import type { ImageModel, ProjectType } from "../types";
+import type { ImageModel, ProjectType, TrainingRun, TrainingModelKey } from "../types";
 import axiosInstance from "../axiosInstance";
 
 interface OCRControlsProps {
@@ -52,6 +52,58 @@ const OCRControls: React.FC<OCRControlsProps> = ({
   const [savingConfig, setSavingConfig] = useState(false);
   const [useTrainedDet, setUseTrainedDet] = useState(false);
   const [useTrainedRec, setUseTrainedRec] = useState(false);
+  const [detRunId, setDetRunId] = useState<string>("");
+  const [recRunId, setRecRunId] = useState<string>("");
+  const [detCheckpointType, setDetCheckpointType] = useState<"best" | "latest">("best");
+  const [recCheckpointType, setRecCheckpointType] = useState<"best" | "latest">("best");
+  const [loadingRuns, setLoadingRuns] = useState(false);
+  const [runsByTarget, setRunsByTarget] = useState<Record<TrainingModelKey, TrainingRun[]>>({
+    det: [],
+    rec: [],
+    kie: [],
+  });
+
+  const loadRuns = async () => {
+    if (!projectId) return;
+    setLoadingRuns(true);
+    try {
+      const response = await axiosInstance.get<{ runs: TrainingRun[] }>("ocr-training/runs/", {
+        params: { project_id: projectId },
+      });
+      const runs = response.data?.runs || [];
+      const grouped: Record<TrainingModelKey, TrainingRun[]> = { det: [], rec: [], kie: [] };
+      runs.forEach((run) => {
+        if (grouped[run.target]) {
+          grouped[run.target].push(run);
+        }
+      });
+      setRunsByTarget(grouped);
+    } catch (error) {
+      console.error("Failed to load training runs", error);
+    } finally {
+      setLoadingRuns(false);
+    }
+  };
+
+  const formatRunLabel = (run: TrainingRun) => {
+    const created = run.created_at ? new Date(run.created_at).toLocaleString() : "";
+    const bestMetricKeys = run.best_metric ? Object.keys(run.best_metric) : [];
+    const bestSummary =
+      bestMetricKeys.length > 0
+        ? `best: ${bestMetricKeys
+            .slice(0, 2)
+            .map((k) => `${k}=${run.best_metric?.[k]}`)
+            .join(", ")}`
+        : "best: n/a";
+    return `${run.target.toUpperCase()} | ${created} | ${run.status} | ${bestSummary}`;
+  };
+
+  const handleOpenConfig = () => {
+    setConfigOpen(true);
+    if (!loadingRuns && projectId) {
+      void loadRuns();
+    }
+  };
 
   const handleDetectRegions = async () => {
     if (disabled || !image.id) return;
@@ -113,9 +165,21 @@ const OCRControls: React.FC<OCRControlsProps> = ({
         if (!projectId) {
           throw new Error("Project id is required to load trained models.");
         }
+        const runsPayload: Record<string, string> = {};
+        const checkpointPayload: Record<string, string> = {};
+        if (useTrainedDet && detRunId) {
+          runsPayload.det = detRunId;
+          checkpointPayload.det = detCheckpointType;
+        }
+        if (useTrainedRec && recRunId) {
+          runsPayload.rec = recRunId;
+          checkpointPayload.rec = recCheckpointType;
+        }
         const response = await axiosInstance.post(`${endpointBase}/configure_trained_models/`, {
           project_id: projectId,
           models: targets,
+          runs: runsPayload,
+          checkpoint_type: checkpointPayload,
         });
         const loaded = response.data?.loaded || {};
         if (useTrainedDet && loaded.det?.model_key) {
@@ -170,7 +234,7 @@ const OCRControls: React.FC<OCRControlsProps> = ({
             </Tooltip>
           )}
         </ButtonGroup>
-        <Button variant="outlined" onClick={() => setConfigOpen(true)} disabled={disabled}>
+        <Button variant="outlined" onClick={handleOpenConfig} disabled={disabled}>
           Configure models
         </Button>
       </Box>
@@ -202,6 +266,41 @@ const OCRControls: React.FC<OCRControlsProps> = ({
               }
               label="Use trained detection model for this project"
             />
+            {useTrainedDet && (
+              <>
+                <TextField
+                  select
+                  fullWidth
+                  label="Detection run"
+                  value={detRunId}
+                  onChange={(e) => setDetRunId(e.target.value)}
+                  disabled={!projectId || loadingRuns || runsByTarget.det.length === 0}
+                  helperText={
+                    runsByTarget.det.length === 0
+                      ? "No completed detection runs found."
+                      : "Select which run to load (optional)."
+                  }
+                >
+                  {runsByTarget.det.map((run) => (
+                    <MenuItem key={run.id} value={run.id}>
+                      {formatRunLabel(run)}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <TextField
+                  select
+                  fullWidth
+                  label="Detection checkpoint"
+                  value={detCheckpointType}
+                  onChange={(e) =>
+                    setDetCheckpointType((e.target.value as "best" | "latest") || "best")
+                  }
+                >
+                  <MenuItem value="best">Best</MenuItem>
+                  <MenuItem value="latest">Latest</MenuItem>
+                </TextField>
+              </>
+            )}
             <TextField
               label="Tolerance ratio (rect merge)"
               type="number"
@@ -238,6 +337,41 @@ const OCRControls: React.FC<OCRControlsProps> = ({
               }
               label="Use trained recognition model for this project"
             />
+            {useTrainedRec && (
+              <>
+                <TextField
+                  select
+                  fullWidth
+                  label="Recognition run"
+                  value={recRunId}
+                  onChange={(e) => setRecRunId(e.target.value)}
+                  disabled={!projectId || loadingRuns || runsByTarget.rec.length === 0}
+                  helperText={
+                    runsByTarget.rec.length === 0
+                      ? "No completed recognition runs found."
+                      : "Select which run to load (optional)."
+                  }
+                >
+                  {runsByTarget.rec.map((run) => (
+                    <MenuItem key={run.id} value={run.id}>
+                      {formatRunLabel(run)}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <TextField
+                  select
+                  fullWidth
+                  label="Recognition checkpoint"
+                  value={recCheckpointType}
+                  onChange={(e) =>
+                    setRecCheckpointType((e.target.value as "best" | "latest") || "best")
+                  }
+                >
+                  <MenuItem value="best">Best</MenuItem>
+                  <MenuItem value="latest">Latest</MenuItem>
+                </TextField>
+              </>
+            )}
             {projectType === "ocr_kie" && (
               <TextField
                 select

@@ -134,3 +134,21 @@ export interface TrainingJob {
     models?: Partial<Record<TrainingModelKey, TrainingModelConfigSummary>>;
   };
 }
+
+export interface TrainingRun {
+  id: string;
+  job_id: string;
+  project_id: number;
+  target: TrainingModelKey;
+  status: TrainingJobStatus;
+  models_dir: string;
+  best_checkpoint?: string;
+  latest_checkpoint?: string;
+  best_metric?: Record<string, number | string>;
+  metrics_log?: Record<string, any>[];
+  log_path?: string;
+  error?: string | null;
+  created_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+}
