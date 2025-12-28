@@ -17,6 +17,7 @@ import {
   TextField,
   Tooltip,
   Typography,
+  MenuItem,
 } from "@mui/material";
 import axiosInstance from "../axiosInstance";
 import type {
@@ -25,13 +26,14 @@ import type {
   TrainingModelConfigSummary,
   TrainingModelKey,
   TrainingDatasetInfo,
+  TrainingRun,
 } from "../types";
 
 /* eslint-disable react-hooks/exhaustive-deps */
 
 type ModelOverrides = Partial<Record<TrainingModelKey, TrainingModelConfigSummary & { epoch_num?: number }>>;
 
-type ModelTabView = "configure" | "runs";
+type ModelTabView = "configure" | "runs" | "models";
 
 interface SnackState {
   open: boolean;
@@ -98,6 +100,27 @@ function ModelTrainingPage() {
   const [datasetSummary, setDatasetSummary] = useState<TrainingDatasetInfo | null>(null);
   const [loadingDataset, setLoadingDataset] = useState(false);
   const [notification, setNotification] = useState<SnackState | null>(null);
+  const [runsByModel, setRunsByModel] = useState<Record<TrainingModelKey, TrainingRun[]>>({
+    det: [],
+    rec: [],
+    kie: [],
+  });
+  const [selectedRunByModel, setSelectedRunByModel] = useState<Record<TrainingModelKey, string | null>>({
+    det: null,
+    rec: null,
+    kie: null,
+  });
+  const [selectedMetricByModel, setSelectedMetricByModel] = useState<Record<TrainingModelKey, string | null>>({
+    det: null,
+    rec: null,
+    kie: null,
+  });
+  const [loadingRuns, setLoadingRuns] = useState(false);
+  const [runsRequestedByModel, setRunsRequestedByModel] = useState<Record<TrainingModelKey, boolean>>({
+    det: false,
+    rec: false,
+    kie: false,
+  });
 
   const logContainerRef = useRef<HTMLDivElement | null>(null);
   const selectedJobIdRef = useRef<string | null>(null);
@@ -204,6 +227,58 @@ function ModelTrainingPage() {
     } finally {
       setLoadingDataset(false);
     }
+  };
+
+  const loadTrainingRuns = async () => {
+    if (!projectNumericId) return;
+    setLoadingRuns(true);
+    try {
+      const response = await axiosInstance.get<{ runs: TrainingRun[] }>("ocr-training/runs/", {
+        params: { project_id: projectNumericId },
+      });
+      const runs = response.data?.runs || [];
+      const grouped: Record<TrainingModelKey, TrainingRun[]> = { det: [], rec: [], kie: [] };
+      runs.forEach((run) => {
+        if (grouped[run.target]) {
+          grouped[run.target].push(run);
+        }
+      });
+      setRunsByModel(grouped);
+      setSelectedRunByModel((prev) => {
+        const next = { ...prev };
+        (["det", "rec", "kie"] as TrainingModelKey[]).forEach((key) => {
+          const candidates = grouped[key] || [];
+          if (!candidates.length) {
+            next[key] = null;
+            return;
+          }
+          if (!next[key] || !candidates.some((run) => run.id === next[key])) {
+            next[key] = candidates[0].id;
+          }
+        });
+        return next;
+      });
+    } catch (error) {
+      console.error("Failed to load training runs", error);
+      notify("Unable to load saved runs.", "warning");
+    } finally {
+      setLoadingRuns(false);
+    }
+  };
+
+  const metricKeysForRun = (run?: TrainingRun | null) => {
+    const keys = new Set<string>();
+    if (!run?.metrics_log) return [];
+    run.metrics_log.forEach((entry) => {
+      Object.entries(entry || {}).forEach(([key, value]) => {
+        if (["global_step", "epoch_current", "epoch_total", "timestamp"].includes(key)) return;
+        const numericVal = typeof value === "number" ? value : Number(value);
+        if (Number.isFinite(numericVal)) {
+          keys.add(key);
+        }
+      });
+    });
+    return Array.from(keys);
   };
 
   const loadJobs = async (selectLatest = false, managePolling = false): Promise<TrainingJob[]> => {
@@ -421,6 +496,69 @@ function ModelTrainingPage() {
   }, [panelTabs, activeModel, jobs, selectedJob, selectedJobId]);
 
   useEffect(() => {
+    if (
+      panelTabs[activeModel] === "models" &&
+      !loadingRuns &&
+      !runsRequestedByModel[activeModel] &&
+      (runsByModel[activeModel] || []).length === 0
+    ) {
+      setRunsRequestedByModel((prev) => ({ ...prev, [activeModel]: true }));
+      loadTrainingRuns();
+    }
+  }, [panelTabs, activeModel, runsByModel, loadingRuns, runsRequestedByModel]);
+
+  useEffect(() => {
+    setSelectedRunByModel((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      (["det", "rec", "kie"] as TrainingModelKey[]).forEach((key) => {
+        const runs = runsByModel[key] || [];
+        const current = prev[key];
+        const fallback = runs[0]?.id ?? null;
+        if (runs.length === 0 && current !== null) {
+          next[key] = null;
+          changed = true;
+          return;
+        }
+        if (current && runs.some((run) => run.id === current)) {
+          return;
+        }
+        if (fallback !== current) {
+          next[key] = fallback;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [runsByModel]);
+
+  useEffect(() => {
+    setSelectedMetricByModel((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      (["det", "rec", "kie"] as TrainingModelKey[]).forEach((key) => {
+        const run =
+          (runsByModel[key] || []).find((item) => item.id === selectedRunByModel[key]) ||
+          (runsByModel[key] || [])[0];
+        const metrics = metricKeysForRun(run);
+        if (metrics.length === 0) {
+          if (next[key] !== null) {
+            next[key] = null;
+            changed = true;
+          }
+          return;
+        }
+        const current = next[key];
+        if (!current || !metrics.includes(current)) {
+          next[key] = metrics[0];
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [runsByModel, selectedRunByModel]);
+
+  useEffect(() => {
     if (!hasActiveJobs(jobs)) {
       stopJobsPolling();
     }
@@ -618,6 +756,151 @@ function ModelTrainingPage() {
           }}
         />
       </Stack>
+    );
+  };
+
+  const summarizeMetric = (metrics?: Record<string, number | string> | null) => {
+    if (!metrics) return "No best metric yet.";
+    const entries = Object.entries(metrics)
+      .filter(([, value]) => value !== null && value !== undefined)
+      .slice(0, 2)
+      .map(([key, value]) => `${key}: ${value}`);
+    return entries.length > 0 ? entries.join(" · ") : "No best metric yet.";
+  };
+
+  const renderMetricChart = (run: TrainingRun, metricKey: string | null) => {
+    if (!metricKey) {
+      return (
+        <Typography color="text.secondary" variant="body2">
+          Select a metric to visualize progress for this run.
+        </Typography>
+      );
+    }
+    const width = 680;
+    const height = 280;
+    const padding = 36;
+    const points =
+      run.metrics_log
+        ?.map((entry, idx) => {
+          const rawX = (entry as any).global_step ?? (entry as any).epoch_current ?? idx + 1;
+          const rawY = (entry as any)[metricKey];
+          const x = typeof rawX === "number" ? rawX : Number(rawX);
+          const y = typeof rawY === "number" ? rawY : Number(rawY);
+          if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+          return { x, y };
+        })
+        .filter(Boolean) as { x: number; y: number }[] | undefined;
+    if (!points || points.length === 0) {
+      return (
+        <Typography color="text.secondary" variant="body2">
+          No metric samples available for "{metricKey}".
+        </Typography>
+      );
+    }
+    const minX = Math.min(...points.map((p) => p.x));
+    const maxX = Math.max(...points.map((p) => p.x));
+    const minY = Math.min(...points.map((p) => p.y));
+    const maxY = Math.max(...points.map((p) => p.y));
+    const rangeX = maxX - minX || 1;
+    const rangeY = maxY - minY || 1;
+    const scaleX = (val: number) =>
+      padding + ((val - minX) / rangeX) * (width - padding * 2);
+    const scaleY = (val: number) =>
+      height - padding - ((val - minY) / rangeY) * (height - padding * 2);
+    const pathD = points
+      .map((p, idx) => `${idx === 0 ? "M" : "L"}${scaleX(p.x)},${scaleY(p.y)}`)
+      .join(" ");
+    const xTicks = [minX, (minX + maxX) / 2, maxX];
+    const yTicks = [minY, (minY + maxY) / 2, maxY];
+
+    return (
+      <Box
+        sx={{
+          background: "rgba(255,255,255,0.02)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 2,
+          p: 1.5,
+        }}
+      >
+        <svg width={width} height={height} role="img" aria-label={`${metricKey} over training steps`}>
+          <rect
+            x={padding}
+            y={padding}
+            width={width - padding * 2}
+            height={height - padding * 2}
+            fill="rgba(255,255,255,0.01)"
+            stroke="rgba(255,255,255,0.12)"
+          />
+          <line
+            x1={padding}
+            y1={height - padding}
+            x2={width - padding}
+            y2={height - padding}
+            stroke="rgba(255,255,255,0.25)"
+          />
+          <line
+            x1={padding}
+            y1={padding}
+            x2={padding}
+            y2={height - padding}
+            stroke="rgba(255,255,255,0.25)"
+          />
+          {xTicks.map((tick) => (
+            <g key={`x-${tick}`}>
+              <line
+                x1={scaleX(tick)}
+                x2={scaleX(tick)}
+                y1={height - padding}
+                y2={height - padding + 6}
+                stroke="rgba(255,255,255,0.35)"
+              />
+              <text
+                x={scaleX(tick)}
+                y={height - padding + 18}
+                fill="#cfd8e3"
+                fontSize="11"
+                textAnchor="middle"
+              >
+                {tick.toFixed(0)}
+              </text>
+            </g>
+          ))}
+          {yTicks.map((tick) => (
+            <g key={`y-${tick}`}>
+              <line
+                x1={padding - 6}
+                x2={padding}
+                y1={scaleY(tick)}
+                y2={scaleY(tick)}
+                stroke="rgba(255,255,255,0.35)"
+              />
+              <text
+                x={padding - 10}
+                y={scaleY(tick) + 4}
+                fill="#cfd8e3"
+                fontSize="11"
+                textAnchor="end"
+              >
+                {tick.toFixed(2)}
+              </text>
+            </g>
+          ))}
+          <path d={pathD} fill="none" stroke="#4fc3f7" strokeWidth={2.5} />
+          {points.map((pt, idx) => (
+            <circle
+              key={`${pt.x}-${idx}`}
+              cx={scaleX(pt.x)}
+              cy={scaleY(pt.y)}
+              r={2.5}
+              fill="#29b6f6"
+              opacity={0.9}
+            />
+          ))}
+        </svg>
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
+          X axis: global_step (or epoch/index) · Y axis: {metricKey}
+        </Typography>
+      </Box>
     );
   };
 
@@ -869,6 +1152,18 @@ function ModelTrainingPage() {
                 : jobsForModel.length
                 ? jobsForModel[0]
                 : null;
+            const runsForModel = runsByModel[model] || [];
+            const selectedRunIdModel =
+              selectedRunByModel[model] && runsForModel.some((run) => run.id === selectedRunByModel[model])
+                ? selectedRunByModel[model]
+                : runsForModel[0]?.id ?? null;
+            const selectedRunModel =
+              runsForModel.find((run) => run.id === selectedRunIdModel) || runsForModel[0] || null;
+            const metricOptions = metricKeysForRun(selectedRunModel);
+            const activeMetric =
+              selectedMetricByModel[model] && metricOptions.includes(selectedMetricByModel[model] as string)
+                ? (selectedMetricByModel[model] as string)
+                : metricOptions[0] ?? null;
             return (
               <Box key={model}>
                 <Tabs
@@ -878,6 +1173,7 @@ function ModelTrainingPage() {
                 >
                   <Tab label="Configure" value="configure" />
                   <Tab label="Runs & Logs" value="runs" />
+                  <Tab label="Saved Models" value="models" />
                 </Tabs>
                 {view === "configure" && (
                   <Box
@@ -974,7 +1270,7 @@ function ModelTrainingPage() {
                                   />
                                 </Box>
                                 <Typography variant="body2" color="text.secondary">
-                                  {queueLabel ? `${queueLabel} • ` : ""}
+                                  {queueLabel ? `${queueLabel} | ` : ""}
                                   Created: {formatTime(job.created_at || job.started_at)}
                                 </Typography>
                                 <Stack direction="row" spacing={1} mt={1}>
@@ -1068,7 +1364,7 @@ function ModelTrainingPage() {
                               Targets: {displayedJob.targets.join(", ")}
                             </Typography>
                             <Typography variant="body2" color="text.secondary">
-                              Created: {formatTime(displayedJob.created_at)} • Started: {formatTime(displayedJob.started_at)} •
+                              Created: {formatTime(displayedJob.created_at)} | Started: {formatTime(displayedJob.started_at)} |
                               Finished: {displayedJob.finished_at ? formatTime(displayedJob.finished_at) : "In progress"}
                             </Typography>
                             {displayedJob.dataset && (
@@ -1110,6 +1406,146 @@ function ModelTrainingPage() {
                         ) : (
                           <Typography color="text.secondary" variant="body2">
                             Select a run to view its status and logs.
+                          </Typography>
+                        )}
+                      </Box>
+                    </Box>
+                  </Box>
+                )}
+                {view === "models" && (
+                  <Box>
+                    <Box
+                      sx={{
+                        display: "grid",
+                        gridTemplateColumns: { xs: "1fr", md: "320px 1fr" },
+                        gap: 2,
+                        alignItems: "stretch",
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          background: "rgba(255,255,255,0.02)",
+                          borderRadius: 2,
+                          p: 2,
+                          border: "1px solid rgba(255,255,255,0.08)",
+                        }}
+                      >
+                        <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                          <Typography variant="subtitle1" fontWeight={700}>
+                            Saved {modelLabels[model]} Runs
+                          </Typography>
+                          <Button size="small" onClick={loadTrainingRuns} disabled={loadingRuns}>
+                            {loadingRuns ? "Loading..." : "Refresh"}
+                          </Button>
+                        </Box>
+                        <Stack spacing={1.25}>
+                          {runsForModel.length === 0 && (
+                            <Typography color="text.secondary" variant="body2">
+                              No completed runs with saved checkpoints yet.
+                            </Typography>
+                          )}
+                          {runsForModel.map((run) => {
+                            const selected = run.id === selectedRunIdModel;
+                            return (
+                              <Box
+                                key={run.id}
+                                onClick={() =>
+                                  setSelectedRunByModel((prev) => ({ ...prev, [model]: run.id }))
+                                }
+                                sx={{
+                                  border: "1px solid",
+                                  borderColor: selected ? "primary.main" : "rgba(255,255,255,0.08)",
+                                  borderRadius: 1,
+                                  p: 1.25,
+                                  cursor: "pointer",
+                                  backgroundColor: selected ? "rgba(33,150,243,0.08)" : "transparent",
+                                  transition: "all 0.2s ease",
+                                }}
+                              >
+                                <Box display="flex" alignItems="center" justifyContent="space-between">
+                                  <Typography variant="subtitle1" fontWeight={700}>
+                                    Run {run.id.slice(0, 8)}
+                                  </Typography>
+                                  <Chip
+                                    label={(run.status || "unknown").toUpperCase()}
+                                    color={statusColor[run.status] || "default"}
+                                    size="small"
+                                  />
+                                </Box>
+                                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                  Created: {formatTime(run.created_at)} · Finished: {formatTime(run.finished_at)}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                  {summarizeMetric(run.best_metric)}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  Checkpoints:{" "}
+                                  {run.best_checkpoint ? "best ✓" : "best –"} · {run.latest_checkpoint ? "latest ✓" : "latest –"}
+                                </Typography>
+                              </Box>
+                            );
+                          })}
+                        </Stack>
+                      </Box>
+                      <Box
+                        sx={{
+                          background: "rgba(255,255,255,0.02)",
+                          borderRadius: 2,
+                          p: 2,
+                          border: "1px solid rgba(255,255,255,0.08)",
+                        }}
+                      >
+                        {selectedRunModel ? (
+                          <Stack spacing={1.25}>
+                            <Box display="flex" alignItems="center" justifyContent="space-between">
+                              <Box>
+                                <Typography variant="subtitle1" fontWeight={700}>
+                                  Run {selectedRunModel.id.slice(0, 8)} metrics
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                  Steps tracked: {selectedRunModel.metrics_log?.length ?? 0}
+                                </Typography>
+                              </Box>
+                              <Chip
+                                label={(selectedRunModel.status || "unknown").toUpperCase()}
+                                color={statusColor[selectedRunModel.status] || "default"}
+                                size="small"
+                              />
+                            </Box>
+                            <Typography variant="body2" color="text.secondary">
+                              Best summary: {summarizeMetric(selectedRunModel.best_metric)}
+                            </Typography>
+                            <Box sx={{ maxWidth: 280 }}>
+                              <TextField
+                                select
+                                fullWidth
+                                size="small"
+                                label="Metric"
+                                value={activeMetric || ""}
+                                onChange={(e) =>
+                                  setSelectedMetricByModel((prev) => ({
+                                    ...prev,
+                                    [model]: e.target.value || null,
+                                  }))
+                                }
+                                helperText={
+                                  metricOptions.length === 0
+                                    ? "No numeric metrics reported yet."
+                                    : "Choose which metric to plot."
+                                }
+                              >
+                                {metricOptions.map((metric) => (
+                                  <MenuItem key={metric} value={metric}>
+                                    {metric}
+                                  </MenuItem>
+                                ))}
+                              </TextField>
+                            </Box>
+                            {renderMetricChart(selectedRunModel, activeMetric)}
+                          </Stack>
+                        ) : (
+                          <Typography color="text.secondary" variant="body2">
+                            Select a saved run to view its metrics.
                           </Typography>
                         )}
                       </Box>
