@@ -904,6 +904,29 @@ function ModelTrainingPage() {
     );
   };
 
+  const handleDeleteRun = async (runId: string, model: TrainingModelKey) => {
+    const confirmDelete = window.confirm("Delete this saved run and its models?");
+    if (!confirmDelete || !projectNumericId) return;
+    try {
+      await axiosInstance.delete("ocr-training/runs/", { data: { project_id: projectNumericId, run_id: runId } });
+      setRunsByModel((prev) => ({
+        ...prev,
+        [model]: (prev[model] || []).filter((run) => run.id !== runId),
+      }));
+      setSelectedRunByModel((prev) => ({
+        ...prev,
+        [model]: prev[model] === runId ? null : prev[model],
+      }));
+      setSelectedMetricByModel((prev) => ({
+        ...prev,
+        [model]: null,
+      }));
+    } catch (error) {
+      console.error("Failed to delete run", error);
+      notify("Could not delete this run.", "error");
+    }
+  };
+
   const currentJob =
     selectedJob || jobs.find((job) => job.targets.includes(activeModel)) || jobs[0] || null;
   const datasetInfo = datasetSummary || currentJob?.dataset;
@@ -1482,6 +1505,19 @@ function ModelTrainingPage() {
                                   Checkpoints:{" "}
                                   {run.best_checkpoint ? "best ✓" : "best –"} · {run.latest_checkpoint ? "latest ✓" : "latest –"}
                                 </Typography>
+                                <Stack direction="row" spacing={1} mt={1}>
+                                  <Button
+                                    size="small"
+                                    variant="text"
+                                    color="error"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteRun(run.id, model);
+                                    }}
+                                  >
+                                    Delete
+                                  </Button>
+                                </Stack>
                               </Box>
                             );
                           })}
