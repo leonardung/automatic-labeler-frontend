@@ -283,12 +283,6 @@ function ModelTrainingPage() {
         });
       });
     }
-    Object.entries(run.best_metric || {}).forEach(([key, value]) => {
-      const numericVal = typeof value === "number" ? value : Number(value);
-      if (Number.isFinite(numericVal)) {
-        keys.add(key);
-      }
-    });
     return Array.from(keys);
   };
 
@@ -829,6 +823,8 @@ function ModelTrainingPage() {
         const points =
           run.metrics_log
             ?.map((entry, entryIdx) => {
+              const phase = (entry as any).phase;
+              if (phase && phase.toLowerCase() === "best") return null;
               const rawX = (entry as any).global_step ?? (entry as any).epoch_current ?? entryIdx + 1;
               const rawY = (entry as any)[metricKey];
               const x = typeof rawX === "number" ? rawX : Number(rawX);
@@ -838,14 +834,7 @@ function ModelTrainingPage() {
             })
             .filter(Boolean) as { x: number; y: number }[] | undefined;
 
-        const bestValue = (run.best_metric || {})[metricKey];
-        const bestNumeric = typeof bestValue === "number" ? bestValue : Number(bestValue);
         const combinedPoints: { x: number; y: number; best?: boolean }[] = points ? [...points] : [];
-        if (Number.isFinite(bestNumeric)) {
-          const lastX = combinedPoints.length ? Math.max(...combinedPoints.map((p) => p.x)) : run.metrics_log?.length || 1;
-          combinedPoints.push({ x: Math.max(lastX, 1), y: bestNumeric as number, best: true });
-        }
-
         combinedPoints.sort((a, b) => a.x - b.x);
         return { metricKey, color: palette[idx % palette.length], points: combinedPoints };
       })
