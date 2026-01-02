@@ -1393,8 +1393,7 @@ function ProjectDetailPage() {
       let categoriesPayload = recRes.data.categories;
 
       const shouldClassify = projectType === "ocr_kie" && shapes.length > 0;
-      const needsClassification = shouldClassify && shapes.some((shape: any) => !shape.category);
-      if (needsClassification) {
+      if (shouldClassify) {
         onStatusChange?.("classifying");
         const classRes = await axiosInstance.post(
           `${imageEndpointBase}/${img.id}/classify_kie/`,
