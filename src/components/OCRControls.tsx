@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState, useTransition } from "react";
 import {
   Box,
   Button,
@@ -16,7 +16,13 @@ import {
 import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
 import TextFieldsIcon from "@mui/icons-material/TextFields";
 import CategoryIcon from "@mui/icons-material/Category";
-import type { ImageModel, ProjectType, TrainingRun, TrainingModelKey } from "../types";
+import type {
+  ImageModel,
+  ProjectType,
+  SelectedOcrModels,
+  TrainingRun,
+  TrainingModelKey,
+} from "../types";
 import axiosInstance from "../axiosInstance";
 
 interface OCRControlsProps {
@@ -28,6 +34,8 @@ interface OCRControlsProps {
   disabled?: boolean;
   endpointBase: string;
   projectId?: number | string | null;
+  selectedModels: SelectedOcrModels;
+  onToggleModel: (model: keyof SelectedOcrModels) => void;
 }
 
 const OCRControls: React.FC<OCRControlsProps> = ({
@@ -39,6 +47,8 @@ const OCRControls: React.FC<OCRControlsProps> = ({
   disabled,
   endpointBase,
   projectId,
+  selectedModels,
+  onToggleModel,
 }) => {
   const DETECT_MODELS = ["PP-OCRv5_server_det", "PP-OCRv5_mobile_det", "PP-OCRv4_server_det", "PP-OCRv4_mobile_det"];
   const RECOGNIZE_MODELS = ["PP-OCRv5_server_rec", "PP-OCRv5_mobile_rec", "PP-OCRv4_server_rec_doc"];
@@ -116,51 +126,6 @@ const OCRControls: React.FC<OCRControlsProps> = ({
     }
   };
 
-  const handleDetectRegions = async () => {
-    if (disabled || !image.id) return;
-    try {
-      onStartBlocking("Detecting regions...");
-      const payload = { model_name: detectModel, tolerance_ratio: detectTolerance };
-      const response = await axiosInstance.post(`${endpointBase}/${image.id}/detect_regions/`, payload);
-      const shapes = response.data.shapes;
-      onImageUpdated({ ...image, ocr_annotations: shapes });
-    } catch (error) {
-      console.error("Error detecting regions:", error);
-    } finally {
-      onStopBlocking();
-    }
-  };
-
-  const handleRecognizeText = async () => {
-    if (disabled || !image.id) return;
-    try {
-      onStartBlocking("Recognizing text...");
-      const payload = { shapes: image.ocr_annotations || [], model_name: recognizeModel };
-      const response = await axiosInstance.post(`${endpointBase}/${image.id}/recognize_text/`, payload);
-      const shapes = response.data.shapes;
-      onImageUpdated({ ...image, ocr_annotations: shapes });
-    } catch (error) {
-      console.error("Error recognizing text:", error);
-    } finally {
-      onStopBlocking();
-    }
-  };
-
-  const handleClassify = async () => {
-    if (disabled || !image.id) return;
-    try {
-      onStartBlocking("Classifying...");
-      const payload = { shapes: image.ocr_annotations || [], model_name: classifyModel };
-      const response = await axiosInstance.post(`${endpointBase}/${image.id}/classify_kie/`, payload);
-      const shapes = response.data.shapes;
-      onImageUpdated({ ...image, ocr_annotations: shapes });
-    } catch (error) {
-      console.error("Error classifying:", error);
-    } finally {
-      onStopBlocking();
-    }
-  };
-
   const handleSaveConfig = async () => {
     setSavingConfig(true);
     try {
@@ -227,6 +192,29 @@ const OCRControls: React.FC<OCRControlsProps> = ({
     }
   };
 
+  const [localSelected, setLocalSelected] = useState<SelectedOcrModels>(selectedModels);
+  useEffect(() => {
+    setLocalSelected(selectedModels);
+  }, [selectedModels]);
+
+  const [, startTransition] = useTransition();
+
+  const handleToggleLocal = (model: keyof SelectedOcrModels) => {
+    setLocalSelected((prev) => ({ ...prev, [model]: !prev[model] }));
+    startTransition(() => onToggleModel(model));
+  };
+
+  const getModelButtonStyles = (active: boolean) => ({
+    flex: 1,
+    backgroundColor: active ? undefined : "rgba(255,255,255,0.08)",
+    color: active ? undefined : "#9fb4c9",
+    boxShadow: active ? undefined : "none",
+    transition: "none",
+    "&:hover": {
+      backgroundColor: active ? "primary.dark" : "rgba(255,255,255,0.16)",
+    },
+  });
+
   return (
     <>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mb: 1 }}>
@@ -237,19 +225,40 @@ const OCRControls: React.FC<OCRControlsProps> = ({
           fullWidth
           sx={{ "& .MuiButton-root": { flex: 1 } }}
         >
-          <Tooltip title="Detect text regions" placement="top" sx={{ flex: 1, display: "flex" }}>
-            <Button startIcon={<AutoFixHighIcon />} onClick={handleDetectRegions} sx={{ flex: 1 }}>
+          <Tooltip title="Toggle detection for inference" placement="top" sx={{ flex: 1, display: "flex" }}>
+            <Button
+              disableRipple
+              disableFocusRipple
+              startIcon={<AutoFixHighIcon />}
+              onClick={() => handleToggleLocal("detect")}
+              sx={getModelButtonStyles(localSelected.detect)}
+              aria-pressed={localSelected.detect}
+            >
               Detect
             </Button>
           </Tooltip>
-          <Tooltip title="Recognize text in regions" placement="top" sx={{ flex: 1, display: "flex" }}>
-            <Button startIcon={<TextFieldsIcon />} onClick={handleRecognizeText} sx={{ flex: 1 }}>
+          <Tooltip title="Toggle recognition for inference" placement="top" sx={{ flex: 1, display: "flex" }}>
+            <Button
+              disableRipple
+              disableFocusRipple
+              startIcon={<TextFieldsIcon />}
+              onClick={() => handleToggleLocal("recognize")}
+              sx={getModelButtonStyles(localSelected.recognize)}
+              aria-pressed={localSelected.recognize}
+            >
               Recognize
             </Button>
           </Tooltip>
           {projectType === "ocr_kie" && (
-            <Tooltip title="Classify regions (KIE)" placement="top" sx={{ flex: 1, display: "flex" }}>
-              <Button startIcon={<CategoryIcon />} onClick={handleClassify} sx={{ flex: 1 }}>
+            <Tooltip title="Toggle classification for inference" placement="top" sx={{ flex: 1, display: "flex" }}>
+              <Button
+                disableRipple
+                disableFocusRipple
+                startIcon={<CategoryIcon />}
+                onClick={() => handleToggleLocal("classify")}
+                sx={getModelButtonStyles(localSelected.classify)}
+                aria-pressed={localSelected.classify}
+              >
                 Classify
               </Button>
             </Tooltip>

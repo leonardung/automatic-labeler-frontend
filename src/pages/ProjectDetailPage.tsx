@@ -51,6 +51,7 @@ import type {
   OCRAnnotation,
   Project,
   ProjectType,
+  SelectedOcrModels,
   SegmentationPoint,
   ProjectSnapshot,
 } from "../types";
@@ -186,6 +187,11 @@ function ProjectDetailPage() {
   const isPollingDatasetProgressRef = useRef(false);
   const [segmentationViewportControls, setSegmentationViewportControls] = useState<ViewportControls | null>(null);
   const [ocrViewportControls, setOcrViewportControls] = useState<ViewportControls | null>(null);
+  const [selectedOcrModels, setSelectedOcrModels] = useState<SelectedOcrModels>({
+    detect: true,
+    recognize: true,
+    classify: true,
+  });
 
   const startLoading = useCallback(() => {
     setLoadingCounter((count) => count + 1);
@@ -199,6 +205,18 @@ function ProjectDetailPage() {
     setBlockingMessage(message || "Working...");
     setBlockingOps((count) => count + 1);
   }, []);
+
+  const toggleOcrModel = useCallback((model: keyof SelectedOcrModels) => {
+    setSelectedOcrModels((prev) => ({ ...prev, [model]: !prev[model] }));
+  }, []);
+
+  const hasSelectedOcrModel = useCallback(() => {
+    return (
+      selectedOcrModels.detect ||
+      selectedOcrModels.recognize ||
+      (projectType === "ocr_kie" && selectedOcrModels.classify)
+    );
+  }, [projectType, selectedOcrModels]);
 
   const clearProgressPolling = useCallback(() => {
     if (progressIntervalRef.current !== null) {
@@ -1375,24 +1393,33 @@ function ProjectDetailPage() {
   const runFullInferenceForImage = useCallback(
     async (
       img: ImageModel,
+      selectedModels: SelectedOcrModels,
       onStatusChange?: (status: BulkOcrStage) => void
     ): Promise<{ shapes: any[]; categories?: string[] }> => {
       if (!img.id) {
         throw new Error("Image is missing an id.");
       }
 
-      onStatusChange?.("detecting");
-      const detRes = await axiosInstance.post(`${imageEndpointBase}/${img.id}/detect_regions/`);
-      let shapes = detRes.data.shapes || [];
+      let shapes = img.ocr_annotations || [];
+      let categoriesPayload: string[] | undefined;
 
-      onStatusChange?.("recognizing");
-      const recRes = await axiosInstance.post(`${imageEndpointBase}/${img.id}/recognize_text/`, {
-        shapes,
-      });
-      shapes = recRes.data.shapes || shapes;
-      let categoriesPayload = recRes.data.categories;
+      if (selectedModels.detect) {
+        onStatusChange?.("detecting");
+        const detRes = await axiosInstance.post(`${imageEndpointBase}/${img.id}/detect_regions/`);
+        shapes = detRes.data.shapes || [];
+      }
 
-      const shouldClassify = projectType === "ocr_kie" && shapes.length > 0;
+      if (selectedModels.recognize) {
+        onStatusChange?.("recognizing");
+        const recRes = await axiosInstance.post(`${imageEndpointBase}/${img.id}/recognize_text/`, {
+          shapes,
+        });
+        shapes = recRes.data.shapes || shapes;
+        categoriesPayload = recRes.data.categories;
+      }
+
+      const shouldClassify =
+        projectType === "ocr_kie" && selectedModels.classify && shapes.length > 0;
       if (shouldClassify) {
         onStatusChange?.("classifying");
         const classRes = await axiosInstance.post(
@@ -1412,16 +1439,24 @@ function ProjectDetailPage() {
     if (isBlocked) return;
     const image = images[currentIndex];
     if (!image || !image.id) return;
-
-    try {
-      startBlocking("Running full inference...");
-      const result = await runFullInferenceForImage(image);
-      handleImageUpdated({ ...image, ocr_annotations: result.shapes || [] });
-    } catch (error) {
-      console.error("Error running full inference:", error);
+    if (!hasSelectedOcrModel()) {
       setNotification({
         open: true,
-        message: "Full inference failed for this page.",
+        message: "Select at least one model before running inference.",
+        severity: "warning",
+      });
+      return;
+    }
+
+    try {
+      startBlocking("Running inference...");
+      const result = await runFullInferenceForImage(image, selectedOcrModels);
+      handleImageUpdated({ ...image, ocr_annotations: result.shapes || [] });
+    } catch (error) {
+      console.error("Error running inference:", error);
+      setNotification({
+        open: true,
+        message: "Inference failed for this page.",
         severity: "error",
       });
     } finally {
@@ -1432,15 +1467,32 @@ function ProjectDetailPage() {
     handleImageUpdated,
     images,
     isBlocked,
+    hasSelectedOcrModel,
     runFullInferenceForImage,
+    selectedOcrModels,
     startBlocking,
     stopBlocking,
+    setNotification,
   ]);
 
   const handleBulkDetectRecognize = useCallback(async () => {
     if (isBlocked) return;
     const targets = images.filter((img) => img.id);
     if (!targets.length) return;
+    if (!hasSelectedOcrModel()) {
+      setNotification({
+        open: true,
+        message: "Select at least one model before running inference.",
+        severity: "warning",
+      });
+      return;
+    }
+
+    const firstStage: BulkOcrStage = selectedOcrModels.detect
+      ? "detecting"
+      : selectedOcrModels.recognize
+      ? "recognizing"
+      : "classifying";
 
     setIsBulkOcrRunning(true);
     setBulkOcrStatus(
@@ -1450,14 +1502,14 @@ function ProjectDetailPage() {
       )
     );
 
-    startBlocking("Running full inference on all pages...");
+    startBlocking("Running inference on all pages...");
 
     try {
       for (const img of targets) {
         if (!img.id) continue;
-        setBulkOcrStatus((prev) => ({ ...prev, [img.id!]: { status: "detecting" } }));
+        setBulkOcrStatus((prev) => ({ ...prev, [img.id!]: { status: firstStage } }));
         try {
-          const result = await runFullInferenceForImage(img, (status) =>
+          const result = await runFullInferenceForImage(img, selectedOcrModels, (status) =>
             setBulkOcrStatus((prev) => ({ ...prev, [img.id!]: { status } }))
           );
           if (result?.shapes) {
@@ -1478,12 +1530,14 @@ function ProjectDetailPage() {
     }
   }, [
     handleImageUpdated,
-    imageEndpointBase,
     images,
     isBlocked,
+    hasSelectedOcrModel,
     runFullInferenceForImage,
+    selectedOcrModels,
     startBlocking,
     stopBlocking,
+    setNotification,
   ]);
 
   useEffect(() => {
@@ -1986,6 +2040,8 @@ function ProjectDetailPage() {
                     onImageUpdated={handleImageUpdated}
                     onStartBlocking={startBlocking}
                     onStopBlocking={stopBlocking}
+                    selectedModels={selectedOcrModels}
+                    onToggleModel={toggleOcrModel}
                     disabled={isBlocked}
                   />
                 )}
@@ -1998,7 +2054,7 @@ function ProjectDetailPage() {
                       disabled={isBlocked || !currentImage}
                       fullWidth
                     >
-                      Full Inference
+                      Run Inference
                     </Button>
                     <Button
                       variant="outlined"
@@ -2007,7 +2063,7 @@ function ProjectDetailPage() {
                       disabled={isBlocked || isBulkOcrRunning || images.length === 0}
                       fullWidth
                     >
-                      Full Inference On All Pages
+                      Run Inference On All Pages
                     </Button>
                   </Box>
                 )}

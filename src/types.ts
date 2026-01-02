@@ -42,6 +42,12 @@ export interface OCRAnnotation {
   category: string | null;
 }
 
+export type SelectedOcrModels = {
+  detect: boolean;
+  recognize: boolean;
+  classify: boolean;
+};
+
 export interface ImageModel {
   id: number;
   image: string;
