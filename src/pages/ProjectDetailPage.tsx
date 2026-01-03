@@ -1,49 +1,14 @@
 import React, { useState, useEffect, useContext, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axiosInstance from "../axiosInstance";
-import {
-  Button,
-  Typography,
-  Box,
-  CssBaseline,
-  Snackbar,
-  Alert,
-  LinearProgress,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  DialogContentText,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemText,
-  IconButton,
-  CircularProgress,
-  ToggleButton,
-  ToggleButtonGroup,
-  Tooltip,
-  Switch,
-} from "@mui/material";
-import DeleteIcon from "@mui/icons-material/Delete";
-import UndoIcon from "@mui/icons-material/Undo";
-import RedoIcon from "@mui/icons-material/Redo";
-import ZoomInIcon from "@mui/icons-material/ZoomIn";
-import ZoomOutIcon from "@mui/icons-material/ZoomOut";
-import FitScreenIcon from "@mui/icons-material/FitScreen";
+import { Alert, Box, CssBaseline, LinearProgress, Snackbar, Typography } from "@mui/material";
 import type { AlertColor } from "@mui/material";
 
-import ImageDisplaySegmentation from "../components/ImageDisplaySegmentation";
-import ImageDisplayOCR from "../components/ImageDisplayOCR";
-import NavigationButtons from "../components/NavigationButtons";
-import Controls from "../components/Controls";
-import ThumbnailGrid from "../components/ThumbnailGrid";
-import MaskCategoryPanel from "../components/MaskCategoryPanel";
-import TextPromptMaskForm from "../components/TextPromptMaskForm";
-import OCRControls from "../components/OCRControls";
-import OCRTextList from "../components/OCRTextList";
-import OcrCategoryPanel from "../components/OcrCategoryPanel";
+import ProjectDetailBlockingOverlay from "./projectDetail/ProjectDetailBlockingOverlay";
+import ProjectDetailHeader from "./projectDetail/ProjectDetailHeader";
+import ProjectDetailSnapshotDialogs from "./projectDetail/ProjectDetailSnapshotDialogs";
+import OcrWorkspace from "./projectDetail/OcrWorkspace";
+import SegmentationWorkspace from "./projectDetail/SegmentationWorkspace";
 import { AuthContext } from "../AuthContext";
 import type {
   ImageModel,
@@ -55,60 +20,19 @@ import type {
   SegmentationPoint,
   ProjectSnapshot,
 } from "../types";
+import {
+  areOcrAnnotationsEqual,
+  cloneOcrAnnotations,
+  decorateImage,
+  formatSnapshotLabel,
+} from "./projectDetail/utils";
+import type { BulkOcrStage, OCRTool, OcrHistoryEntry, ViewportControls } from "./projectDetail/types";
 
 interface NotificationState {
   open: boolean;
   message: string;
   severity: AlertColor;
 }
-
-type OCRTool = "rect" | "polygon" | "select";
-type OcrHistoryEntry = { past: OCRAnnotation[][]; future: OCRAnnotation[][] };
-type ViewportControls = {
-  zoomIn: () => void;
-  zoomOut: () => void;
-  toggleFit: () => void;
-  fitMode: "inside" | "outside";
-};
-type BulkOcrStage = "pending" | "detecting" | "recognizing" | "classifying" | "done" | "error";
-
-const cloneOcrAnnotations = (annotations: OCRAnnotation[] = []) =>
-  annotations.map((ann) => ({
-    ...ann,
-    points: ann.points.map((p) => ({ ...p })),
-  }));
-
-const areOcrAnnotationsEqual = (a: OCRAnnotation[] = [], b: OCRAnnotation[] = []) => {
-  if (a.length !== b.length) return false;
-  const sortedA = [...a].sort((x, y) => x.id.localeCompare(y.id));
-  const sortedB = [...b].sort((x, y) => x.id.localeCompare(y.id));
-
-  return sortedA.every((ann, idx) => {
-    const other = sortedB[idx];
-    if (!other) return false;
-    if (
-      ann.id !== other.id ||
-      ann.type !== other.type ||
-      ann.text !== other.text ||
-      ann.category !== other.category
-    ) {
-      return false;
-    }
-    if (ann.points.length !== other.points.length) return false;
-    return ann.points.every((pt, ptIdx) => {
-      const otherPt = other.points[ptIdx];
-      return Boolean(otherPt) && pt.x === otherPt.x && pt.y === otherPt.y;
-    });
-  });
-};
-
-const normalizeOcrAnnotations = (annotations?: any[]) =>
-  (annotations || []).map((a) => ({
-    ...a,
-    id: typeof a.id === "string" ? a.id : String(a.id ?? ""),
-    type: a.type || a.shape_type || "rect",
-    points: a.points || [],
-  }));
 
 function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -357,22 +281,6 @@ function ProjectDetailPage() {
     }
   };
 
-  const bustCache = useCallback((url?: string | null): string | null => {
-    return url ? `${url.split("?")[0]}?t=${Date.now()}` : null;
-  }, []);
-
-  const decorateImage = useCallback(
-    (img: ImageModel): ImageModel => ({
-      ...img,
-      masks: (img.masks || []).map((m) => ({
-        ...m,
-        mask: bustCache(m.mask),
-      })),
-      ocr_annotations: normalizeOcrAnnotations(img.ocr_annotations),
-    }),
-    [bustCache]
-  );
-
   const applyProjectPayload = useCallback(
     (payload: Project) => {
       const decoratedImages = (payload.images || []).map(decorateImage);
@@ -403,28 +311,6 @@ function ProjectDetailPage() {
     },
     [decorateImage]
   );
-
-  const formatSnapshotLabel = useCallback((snapshot: ProjectSnapshot) => {
-    const title = (snapshot.name || "").trim();
-    if (title) return title;
-    return new Date(snapshot.created_at).toLocaleString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }, []);
-
-  const formatSnapshotDate = useCallback((snapshot: ProjectSnapshot) => {
-    return new Date(snapshot.created_at).toLocaleString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }, []);
 
   const fetchSnapshots = useCallback(async () => {
     if (!projectId) return;
@@ -831,6 +717,13 @@ function ProjectDetailPage() {
       stopBlocking();
       stopLoading();
     }
+  };
+
+  const handleConfirmSaveSnapshot = () => {
+    const name = snapshotName.trim();
+    setSaveDialogOpen(false);
+    setSnapshotName("");
+    handleSaveSnapshot(name);
   };
 
   const handleLoadProjectSnapshot = async (snapshotId: number) => {
@@ -1709,6 +1602,14 @@ function ProjectDetailPage() {
     });
   };
 
+  const handleRequireCategory = useCallback(() => {
+    setNotification({
+      open: true,
+      message: "Create/select a category before adding points.",
+      severity: "info",
+    });
+  }, [setNotification]);
+
   const handleNotificationClose = () => {
     setNotification((prev) => ({ ...prev, open: false }));
   };
@@ -1716,50 +1617,6 @@ function ProjectDetailPage() {
   const handleBackToRoot = () => {
     navigate("/");
   };
-
-  const renderViewportControls = (controls: ViewportControls | null) => (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-      <Tooltip title="Zoom in">
-        <span>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<ZoomInIcon />}
-            onClick={controls?.zoomIn}
-            disabled={!controls || isBlocked}
-          >
-            Zoom
-          </Button>
-        </span>
-      </Tooltip>
-      <Tooltip title="Zoom out">
-        <span>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<ZoomOutIcon />}
-            onClick={controls?.zoomOut}
-            disabled={!controls || isBlocked}
-          >
-            Unzoom
-          </Button>
-        </span>
-      </Tooltip>
-      <Tooltip title={`Fit ${controls?.fitMode === "outside" ? "Outside" : "Inside"}`}>
-        <span>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<FitScreenIcon />}
-            onClick={controls?.toggleFit}
-            disabled={!controls || isBlocked}
-          >
-            Fit ({controls?.fitMode === "outside" ? "Out" : "In"})
-          </Button>
-        </span>
-      </Tooltip>
-    </Box>
-  );
 
   return (
     <Box
@@ -1773,664 +1630,143 @@ function ProjectDetailPage() {
       }}
       aria-busy={isBlocked}
     >
-      {isBlocked && (
-        <Box
-          sx={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 2000,
-            backgroundColor: "rgba(6, 12, 20, 0.65)",
-            backdropFilter: "blur(4px)",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 2,
-            color: "white",
-            pointerEvents: "auto",
-          }}
-        >
-          <CircularProgress color="inherit" />
-          <Typography variant="h6" sx={{ fontWeight: 700 }}>
-            {blockingMessage}
-          </Typography>
-          <Typography variant="body2" sx={{ opacity: 0.8 }}>
-            Please wait...
-          </Typography>
-          {(isPropagating || isBulkOcrRunning || isImportingDataset) && (
-            <Box sx={{ width: 360, display: "flex", flexDirection: "column", gap: 1.25 }}>
-              {isImportingDataset && (
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-                  <LinearProgress
-                    variant="determinate"
-                    value={datasetImportProgress.percent}
-                    sx={{ width: "100%" }}
-                  />
-                  <Typography variant="caption" sx={{ textAlign: "center", color: "rgba(255,255,255,0.9)" }}>
-                    {`Dataset import ${datasetImportProgress.percent}%`}
-                    {datasetImportProgress.total > 0
-                      ? ` (${datasetImportProgress.processed}/${datasetImportProgress.total} lines)`
-                      : datasetImportProgress.processed
-                      ? ` (${datasetImportProgress.processed} lines processed)`
-                      : ""}
-                  </Typography>
-                </Box>
-              )}
-              {(isPropagating || isBulkOcrRunning) && (
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
-                  <LinearProgress
-                    variant={isPropagating ? "determinate" : "indeterminate"}
-                    value={isPropagating ? propagationProgress : undefined}
-                    sx={{ width: "100%" }}
-                  />
-                  <Typography variant="caption" sx={{ textAlign: "center", color: "rgba(255,255,255,0.9)" }}>
-                    {isPropagating ? `Propagation ${propagationProgress}% complete` : "Running OCR..."}
-                  </Typography>
-                </Box>
-              )}
-              {isBulkOcrRunning && Object.keys(bulkOcrStatus).length > 0 && (
-                <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5, mt: 0.5 }}>
-                  {images.map((img) => {
-                    if (!img.id || !bulkOcrStatus[img.id]) return null;
-                    const status = bulkOcrStatus[img.id];
-                    const value =
-                      status.status === "pending"
-                        ? 0
-                        : status.status === "detecting"
-                        ? 40
-                        : status.status === "recognizing"
-                        ? 80
-                        : 100;
-                    const label =
-                      status.status === "done"
-                        ? "Done"
-                        : status.status === "error"
-                        ? status.error || "Error"
-                        : status.status === "recognizing"
-                        ? "Recognizing..."
-                        : status.status === "detecting"
-                        ? "Detecting..."
-                        : "Pending";
-                    const title = img.original_filename || `Image ${img.id}`;
-                    return (
-                      <Box key={img.id} sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
-                        <Typography variant="caption" color="rgba(255,255,255,0.85)">
-                          {title}: {label}
-                        </Typography>
-                        <LinearProgress
-                          variant="determinate"
-                          value={value}
-                          color={
-                            status.status === "error"
-                              ? "error"
-                              : status.status === "done"
-                              ? "success"
-                              : "primary"
-                          }
-                          sx={{
-                            height: 6,
-                            borderRadius: 1,
-                            backgroundColor: "rgba(255,255,255,0.2)",
-                          }}
-                        />
-                      </Box>
-                    );
-                  })}
-                </Box>
-              )}
-            </Box>
-          )}
-        </Box>
-      )}
+      <ProjectDetailBlockingOverlay
+        isBlocked={isBlocked}
+        blockingMessage={blockingMessage}
+        isPropagating={isPropagating}
+        propagationProgress={propagationProgress}
+        isBulkOcrRunning={isBulkOcrRunning}
+        bulkOcrStatus={bulkOcrStatus}
+        images={images}
+        isImportingDataset={isImportingDataset}
+        datasetImportProgress={datasetImportProgress}
+      />
       <CssBaseline />
-      <Box
-        mb={1}
-        pt={2}
-        pb={2}
-        px={3}
-        display="flex"
-        alignItems="center"
-        sx={{
-          gap: 2,
-          backgroundColor: "rgba(17,24,39,0.78)",
-          borderBottom: "1px solid #1f2a3d",
-          boxShadow: "0 10px 30px rgba(0,0,0,0.45)",
-          backdropFilter: "blur(8px)",
-        }}
-      >
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={handleSelectFolder}
-          sx={{ boxShadow: "0 10px 30px rgba(90,216,255,0.25)" }}
-        >
-          {projectType === "video_tracking_segmentation" ? "Upload Video" : "Upload Images"}
-        </Button>
-        <Dialog open={openSettingsDialog} onClose={() => setOpenSettingsDialog(false)}>
-          <DialogTitle>Video Settings</DialogTitle>
-          <DialogContent>
-            <TextField
-              label="Max Number of Frames"
-              type="number"
-              fullWidth
-              margin="normal"
-              value={maxFrames}
-              onChange={(e) => setMaxFrames(Number(e.target.value))}
-            />
-            <TextField
-              label="Stride"
-              type="number"
-              fullWidth
-              margin="normal"
-              value={stride}
-              onChange={(e) => setStride(Number(e.target.value))}
-            />
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setOpenSettingsDialog(false)}>Cancel</Button>
-            <Button onClick={handleSettingsSubmit} variant="contained" color="primary">
-              Confirm
-            </Button>
-          </DialogActions>
-        </Dialog>
-
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, ml: 2 }}>
-          <Button
-            variant="outlined"
-            color="secondary"
-            onClick={() => setLoadDialogMode("page")}
-            disabled={isBlocked || snapshots.length === 0 || !currentImage}
-          >
-            Load Page
-          </Button>
-          <Button
-            variant="outlined"
-            color="secondary"
-            onClick={() => setLoadDialogMode("project")}
-            disabled={isBlocked || snapshots.length === 0}
-          >
-            Load Project
-          </Button>
-          <Button
-            variant="contained"
-            color="secondary"
-            onClick={() => setSaveDialogOpen(true)}
-            disabled={isBlocked || !project}
-            sx={{ boxShadow: "0 10px 24px rgba(120,202,255,0.2)" }}
-          >
-            Save Project
-          </Button>
-        </Box>
-
-        {isOCRProject && (
-          <Button
-            variant="outlined"
-            color="info"
-            onClick={handleImportOcrDataset}
-            disabled={isBlocked || !project}
-          >
-            Import OCR Dataset
-          </Button>
-        )}
-
-        {isOCRProject && (
-          <Button
-            variant="contained"
-            color="success"
-            onClick={openTrainingPage}
-            disabled={isBlocked || !project}
-            sx={{ boxShadow: "0 10px 28px rgba(94,255,180,0.25)" }}
-          >
-            Models Training
-          </Button>
-        )}
-
-        <Typography variant="h4" color="primary" fontWeight="bold" sx={{ ml: 4 }}>
-          {project ? project.name : "Loading Project..."}
-        </Typography>
-
-        <Box sx={{ display: "flex", ml: "auto" }}>
-          <Button
-            variant="contained"
-            color="secondary"
-            onClick={handleBackToRoot}
-            sx={{ mr: 2 }}
-          >
-            Back
-          </Button>
-          <Button
-            variant="contained"
-            color="secondary"
-            onClick={logoutUser}
-            sx={{ mr: 2 }}
-          >
-            Logout
-          </Button>
-        </Box>
-      </Box>
+      <ProjectDetailHeader
+        projectType={projectType}
+        project={project}
+        isBlocked={isBlocked}
+        snapshotsCount={snapshots.length}
+        hasCurrentImage={Boolean(currentImage)}
+        onSelectFolder={handleSelectFolder}
+        onOpenLoadPage={() => setLoadDialogMode("page")}
+        onOpenLoadProject={() => setLoadDialogMode("project")}
+        onOpenSaveDialog={() => setSaveDialogOpen(true)}
+        onImportOcrDataset={handleImportOcrDataset}
+        onOpenTraining={openTrainingPage}
+        onBack={handleBackToRoot}
+        onLogout={logoutUser}
+        openSettingsDialog={openSettingsDialog}
+        maxFrames={maxFrames}
+        stride={stride}
+        onSettingsClose={() => setOpenSettingsDialog(false)}
+        onSettingsSubmit={handleSettingsSubmit}
+        onMaxFramesChange={(value) => setMaxFrames(value)}
+        onStrideChange={(value) => setStride(value)}
+        showOcrActions={isOCRProject}
+      />
       {loading && <LinearProgress />}
       {images.length > 0 ? (
         isOCRProject ? (
-          <Box display="flex" flexDirection="column" flexGrow={1} height="100%" overflow="hidden">
-            <Box display="flex" flexGrow={1} overflow="hidden">
-              <Box
-                sx={{
-                  flexShrink: 0,
-                  width: 380,
-                  minWidth: 300,
-                  maxWidth: "50vw",
-                  resize: "horizontal",
-                  overflow: "auto",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 1.5,
-                  height: "100%",
-                  p: 2,
-                  backgroundColor: "#0f1624",
-                  borderRight: "1px solid #1f2a3d",
-                  boxShadow: "inset -1px 0 0 rgba(255,255,255,0.04)",
-                }}
-              >
-                {currentImage && (
-                  <OCRControls
-                    image={currentImage}
-                    projectType={projectType}
-                    projectId={projectId}
-                    endpointBase={imageEndpointBase}
-                    onImageUpdated={handleImageUpdated}
-                    onStartBlocking={startBlocking}
-                    onStopBlocking={stopBlocking}
-                    selectedModels={selectedOcrModels}
-                    onToggleModel={toggleOcrModel}
-                    disabled={isBlocked}
-                  />
-                )}
-                {isOCRProject && (
-                  <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-                    <Button
-                      variant="contained"
-                      color="secondary"
-                      onClick={handleFullInference}
-                      disabled={isBlocked || !currentImage}
-                      fullWidth
-                    >
-                      Run Inference
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      color="secondary"
-                      onClick={handleBulkDetectRecognize}
-                      disabled={isBlocked || isBulkOcrRunning || images.length === 0}
-                      fullWidth
-                    >
-                      Run Inference On All Pages
-                    </Button>
-                  </Box>
-                )}
-                {showOcrCategoryPanel && (
-                  <Box
-                    sx={{
-                      minHeight: 100,
-                      maxHeight: maxOcrCategoryHeight,
-                      height: maxOcrCategoryHeight,
-                      resize: "vertical",
-                      overflow: "auto",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <OcrCategoryPanel
-                      ref={ocrCategoryPanelRef}
-                      categories={categories}
-                      activeCategoryId={activeCategoryId}
-                      onSelectCategory={handleSelectCategory}
-                      onAddCategory={handleAddCategory}
-                      onDeleteCategory={handleDeleteCategory}
-                      onColorChange={handleColorChange}
-                      onRenameCategory={handleRenameCategory}
-                      disabled={isBlocked}
-                    />
-                  </Box>
-                )}
-                {currentImage && (
-                  <Box
-                    sx={{
-                      minHeight: 240,
-                      maxHeight: "70vh",
-                      resize: "vertical",
-                      overflow: "hidden",
-                      flexGrow: 1,
-                      flexShrink: 0,
-                      "& > *": { height: "100%" },
-                    }}
-                  >
-                  <OCRTextList
-                      image={currentImage}
-                      categories={categories}
-                      selectedShapeIds={selectedShapeIds}
-                      onSelectShapes={handleSelectShapesFromList}
-                      onImageUpdated={handleImageUpdated}
-                      disabled={isBlocked}
-                      endpointBase={imageEndpointBase}
-                      showCategories={showOcrCategoryPanel}
-                      scrollSignal={selectionScrollSignal}
-                    />
-                  </Box>
-                )}
-              </Box>
-              <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
-                <Box
-                  display="flex"
-                  alignItems="center"
-                  justifyContent="space-between"
-                  flexWrap="wrap"
-                  gap={1}
-                  mb={1}
-                >
-                  <ToggleButtonGroup
-                    color="primary"
-                    value={ocrTool}
-                    exclusive
-                    size="small"
-                    onChange={(_, value: OCRTool | null) => value && setOcrTool(value)}
-                    sx={{ "& .MuiToggleButton-root": { minWidth: 80 } }}
-                  >
-                    <ToggleButton value="select">Select (S)</ToggleButton>
-                    <ToggleButton value="rect">Rect (R)</ToggleButton>
-                    <ToggleButton value="polygon">Polygon (P)</ToggleButton>
-                  </ToggleButtonGroup>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-                    <Switch
-                      size="small"
-                      checked={showOcrText}
-                      onChange={(e) => setShowOcrText(e.target.checked)}
-                    />
-                    <Typography variant="body2" color="textSecondary">
-                      Show Recognized Text
-                    </Typography>
-                  </Box>
-                  {renderViewportControls(ocrViewportControls)}
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                    <Tooltip title="Undo (Ctrl+Z)">
-                      <span>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          startIcon={<UndoIcon />}
-                          onClick={handleUndo}
-                          disabled={!canUndo || isBlocked || isApplyingHistory}
-                        >
-                          Undo
-                        </Button>
-                      </span>
-                    </Tooltip>
-                    <Tooltip title="Redo (Ctrl+Y / Ctrl+Shift+Z)">
-                      <span>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          startIcon={<RedoIcon />}
-                          onClick={handleRedo}
-                          disabled={!canRedo || isBlocked || isApplyingHistory}
-                        >
-                          Redo
-                        </Button>
-                      </span>
-                    </Tooltip>
-                  </Box>
-                </Box>
-                <Box display="flex" flexGrow={1} overflow="hidden">
-                  <Box flexGrow={1} display="flex" overflow="hidden">
-                    {currentImage && (
-                      <ImageDisplayOCR
-                        image={currentImage}
-                        activeTool={ocrTool}
-                        categories={categories}
-                        selectedShapeIds={selectedShapeIds}
-                        onSelectShapes={handleSelectShapesFromImage}
-                        onImageUpdated={handleImageUpdated}
-                        disabled={isBlocked}
-                        onStartBlocking={startBlocking}
-                        onStopBlocking={stopBlocking}
-                        endpointBase={imageEndpointBase}
-                        showTextLabels={showOcrText}
-                        onRegisterViewportControls={setOcrViewportControls}
-                      />
-                    )}
-                  </Box>
-                  <Box
-                    width={80}
-                    display="flex"
-                    flexDirection="column"
-                    justifyContent="center"
-                    alignItems="flex-start"
-                  >
-                    <NavigationButtons
-                      onPrev={handlePrevImage}
-                      onNext={handleNextImage}
-                      disablePrev={currentIndex === 0}
-                      disableNext={currentIndex === images.length - 1}
-                      disabled={isBlocked}
-                    />
-                    <Controls
-                      projectType={projectType}
-                      onPropagate={handlePropagateMask}
-                      onClearLabels={handleClearLabels}
-                      disabled={isBlocked}
-                    />
-                  </Box>
-                </Box>
-              </Box>
-            </Box>
-            <ThumbnailGrid
-              images={images}
-              onThumbnailClick={handleThumbnailClick}
-              currentIndex={currentIndex}
-            />
-          </Box>
+          <OcrWorkspace
+            images={images}
+            currentIndex={currentIndex}
+            currentImage={currentImage}
+            projectType={projectType}
+            projectId={projectId}
+            imageEndpointBase={imageEndpointBase}
+            categories={categories}
+            activeCategoryId={activeCategoryId}
+            showOcrCategoryPanel={showOcrCategoryPanel}
+            maxOcrCategoryHeight={maxOcrCategoryHeight}
+            ocrCategoryPanelRef={ocrCategoryPanelRef}
+            selectedShapeIds={selectedShapeIds}
+            selectionScrollSignal={selectionScrollSignal}
+            ocrTool={ocrTool}
+            showOcrText={showOcrText}
+            isBlocked={isBlocked}
+            isBulkOcrRunning={isBulkOcrRunning}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            isApplyingHistory={isApplyingHistory}
+            selectedOcrModels={selectedOcrModels}
+            onToggleOcrModel={toggleOcrModel}
+            onSelectCategory={handleSelectCategory}
+            onAddCategory={handleAddCategory}
+            onDeleteCategory={handleDeleteCategory}
+            onColorChange={handleColorChange}
+            onRenameCategory={handleRenameCategory}
+            onSelectShapesFromList={handleSelectShapesFromList}
+            onSelectShapesFromImage={handleSelectShapesFromImage}
+            onOcrToolChange={(tool) => setOcrTool(tool)}
+            onToggleShowOcrText={(value) => setShowOcrText(value)}
+            onImageUpdated={handleImageUpdated}
+            onStartBlocking={startBlocking}
+            onStopBlocking={stopBlocking}
+            onRunInference={handleFullInference}
+            onRunInferenceAll={handleBulkDetectRecognize}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            onPrevImage={handlePrevImage}
+            onNextImage={handleNextImage}
+            onThumbnailClick={handleThumbnailClick}
+            onPropagateMask={handlePropagateMask}
+            onClearLabels={handleClearLabels}
+            viewportControls={ocrViewportControls}
+            onRegisterViewportControls={(controls) => setOcrViewportControls(controls)}
+          />
         ) : (
-          <Box display="flex" flexDirection="column" flexGrow={1} height="100%" overflow="hidden">
-            <Box display="flex" flexGrow={1} overflow="hidden">
-              <Box
-                sx={{
-                  flexShrink: 0,
-                  width: 380,
-                  minWidth: 300,
-                  maxWidth: "50vw",
-                  resize: "horizontal",
-                  overflow: "hidden",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 1,
-                  height: "100%",
-                  minHeight: 0,
-                  p: 2,
-                  backgroundColor: "#0f1624",
-                  borderRight: "1px solid #1f2a3d",
-                  boxShadow: "inset -1px 0 0 rgba(255,255,255,0.04)",
-                }}
-              >
-                <TextPromptMaskForm
-                  disabled={images.length === 0 || isBlocked}
-                  loading={promptLoading || loading || isBlocked}
-                  onSubmit={handleGenerateFromPrompt}
-                />
-                <Box
-                  sx={{
-                    minHeight: 180,
-                    flexGrow: 1,
-                    display: "flex",
-                    flexDirection: "column",
-                    overflow: "hidden",
-                  }}
-                >
-                  <MaskCategoryPanel
-                    categories={categories}
-                    activeCategoryId={activeCategoryId}
-                    onSelectCategory={handleSelectCategory}
-                    onAddCategory={handleAddCategory}
-                    onDeleteCategory={handleDeleteCategory}
-                    onColorChange={handleColorChange}
-                  />
-                </Box>
-              </Box>
-              <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
-                <Box display="flex" justifyContent="flex-end" mb={1}>
-                  {renderViewportControls(segmentationViewportControls)}
-                </Box>
-                <Box display="flex" flexGrow={1} overflow="hidden">
-                  <Box flexGrow={1} display="flex" overflow="hidden">
-                    <ImageDisplaySegmentation
-                      image={images[currentIndex]}
-                      categories={categories}
-                      activeCategoryId={activeCategoryId}
-                      highlightCategoryId={highlightCategoryId}
-                      highlightSignal={highlightSignal}
-                      onImageUpdated={handleImageUpdated}
-                      onPointsUpdated={handlePointsUpdated}
-                      disabled={isBlocked}
-                      onStartBlocking={startBlocking}
-                      onStopBlocking={stopBlocking}
-                      onRequireCategory={() =>
-                        setNotification({
-                          open: true,
-                          message: "Create/select a category before adding points.",
-                          severity: "info",
-                        })
-                      }
-                      onRegisterViewportControls={setSegmentationViewportControls}
-                    />
-                  </Box>
-                  <Box
-                    width={80}
-                    display="flex"
-                    flexDirection="column"
-                    justifyContent="center"
-                    alignItems="flex-start"
-                  >
-                    <NavigationButtons
-                      onPrev={handlePrevImage}
-                      onNext={handleNextImage}
-                      disablePrev={currentIndex === 0}
-                      disableNext={currentIndex === images.length - 1}
-                      disabled={isBlocked}
-                    />
-                    <Controls
-                      projectType={projectType}
-                      onPropagate={handlePropagateMask}
-                      onClearLabels={handleClearLabels}
-                      disabled={isBlocked}
-                    />
-                  </Box>
-                </Box>
-              </Box>
-            </Box>
-            <ThumbnailGrid
-              images={images}
-              onThumbnailClick={handleThumbnailClick}
-              currentIndex={currentIndex}
-            />
-          </Box>
+          <SegmentationWorkspace
+            images={images}
+            currentIndex={currentIndex}
+            categories={categories}
+            activeCategoryId={activeCategoryId}
+            highlightCategoryId={highlightCategoryId}
+            highlightSignal={highlightSignal}
+            promptLoading={promptLoading}
+            loading={loading}
+            isBlocked={isBlocked}
+            projectType={projectType}
+            onGenerateFromPrompt={handleGenerateFromPrompt}
+            onSelectCategory={handleSelectCategory}
+            onAddCategory={handleAddCategory}
+            onDeleteCategory={handleDeleteCategory}
+            onColorChange={handleColorChange}
+            onImageUpdated={handleImageUpdated}
+            onPointsUpdated={handlePointsUpdated}
+            onRequireCategory={handleRequireCategory}
+            onStartBlocking={startBlocking}
+            onStopBlocking={stopBlocking}
+            onPrevImage={handlePrevImage}
+            onNextImage={handleNextImage}
+            onPropagateMask={handlePropagateMask}
+            onClearLabels={handleClearLabels}
+            onThumbnailClick={handleThumbnailClick}
+            viewportControls={segmentationViewportControls}
+            onRegisterViewportControls={(controls) =>
+              setSegmentationViewportControls(controls)
+            }
+          />
         )
       ) : (
         <Typography variant="body1" color="text.secondary" align="center">
           No images loaded. Please upload images.
         </Typography>
       )}
-      <Dialog
-        open={Boolean(loadDialogMode)}
-        onClose={() => setLoadDialogMode(null)}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>
-          {loadDialogMode === "project" ? "Load Project Snapshot" : "Load Page Snapshot"}
-        </DialogTitle>
-        <DialogContent dividers>
-          <DialogContentText sx={{ mb: 2 }}>
-            {loadDialogMode === "project"
-              ? "Apply a saved version to every page in this project."
-              : "Apply a saved version to the current page."}
-          </DialogContentText>
-          {snapshots.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              No saved snapshots yet. Save a project first to see versions here.
-            </Typography>
-          ) : (
-            <List>
-              {snapshots.map((snap) => (
-                <ListItem key={snap.id} disablePadding>
-                  <ListItemButton
-                    onClick={() =>
-                      loadDialogMode && handleLoadSnapshot(loadDialogMode, snap.id)
-                    }
-                    disabled={isBlocked || (loadDialogMode === "page" && !currentImage)}
-                  >
-                    <ListItemText
-                      primary={formatSnapshotLabel(snap)}
-                      secondary={(snap.name || "").trim() ? formatSnapshotDate(snap) : undefined}
-                    />
-                    <Box display="flex" alignItems="center" gap={1}>
-                      <Button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          loadDialogMode && handleLoadSnapshot(loadDialogMode, snap.id);
-                        }}
-                        disabled={isBlocked || (loadDialogMode === "page" && !currentImage)}
-                      >
-                        Load
-                      </Button>
-                      <IconButton
-                        edge="end"
-                        aria-label="delete snapshot"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteSnapshot(snap.id);
-                        }}
-                        disabled={isBlocked}
-                        size="small"
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
-                  </ListItemButton>
-                </ListItem>
-              ))}
-            </List>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setLoadDialogMode(null)}>Close</Button>
-        </DialogActions>
-      </Dialog>
-      <Dialog open={saveDialogOpen} onClose={() => setSaveDialogOpen(false)}>
-        <DialogTitle>Save Project Snapshot</DialogTitle>
-        <DialogContent>
-          <DialogContentText sx={{ mb: 1 }}>
-            Optional: add a title for this version. Leave blank to use the timestamp.
-          </DialogContentText>
-          <TextField
-            label="Snapshot Title (optional)"
-            fullWidth
-            value={snapshotName}
-            onChange={(e) => setSnapshotName(e.target.value)}
-            autoFocus
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
-          <Button
-            onClick={() => {
-              const name = snapshotName.trim();
-              setSaveDialogOpen(false);
-              setSnapshotName("");
-              handleSaveSnapshot(name);
-            }}
-            variant="contained"
-          >
-            Save
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ProjectDetailSnapshotDialogs
+        loadDialogMode={loadDialogMode}
+        snapshots={snapshots}
+        currentImage={currentImage}
+        isBlocked={isBlocked}
+        onCloseLoadDialog={() => setLoadDialogMode(null)}
+        onLoadSnapshot={handleLoadSnapshot}
+        onDeleteSnapshot={handleDeleteSnapshot}
+        saveDialogOpen={saveDialogOpen}
+        snapshotName={snapshotName}
+        onSnapshotNameChange={(value) => setSnapshotName(value)}
+        onCloseSaveDialog={() => setSaveDialogOpen(false)}
+        onConfirmSaveSnapshot={handleConfirmSaveSnapshot}
+      />
       <Snackbar
         open={notification.open}
         autoHideDuration={6000}
