@@ -1713,7 +1713,7 @@ function ProjectDetailPage() {
             onPropagateMask={handlePropagateMask}
             onClearLabels={handleClearLabels}
             viewportControls={ocrViewportControls}
-            onRegisterViewportControls={(controls) => setOcrViewportControls(controls)}
+            onRegisterViewportControls={setOcrViewportControls}
           />
         ) : (
           <SegmentationWorkspace
@@ -1743,9 +1743,7 @@ function ProjectDetailPage() {
             onClearLabels={handleClearLabels}
             onThumbnailClick={handleThumbnailClick}
             viewportControls={segmentationViewportControls}
-            onRegisterViewportControls={(controls) =>
-              setSegmentationViewportControls(controls)
-            }
+            onRegisterViewportControls={setSegmentationViewportControls}
           />
         )
       ) : (
