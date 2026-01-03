@@ -1,0 +1,155 @@
+import { useProjectDetailActions } from "./useProjectDetailActions";
+import { useProjectDetailEffects } from "./useProjectDetailEffects";
+import { useProjectDetailState } from "./useProjectDetailState";
+
+export const useProjectDetailController = () => {
+  const state = useProjectDetailState();
+  const actions = useProjectDetailActions(state);
+
+  useProjectDetailEffects(state, actions);
+
+  const hasImages = state.images.length > 0;
+
+  const overlayProps = {
+    isBlocked: state.isBlocked,
+    blockingMessage: state.blockingMessage,
+    isPropagating: state.isPropagating,
+    propagationProgress: state.propagationProgress,
+    isBulkOcrRunning: state.isBulkOcrRunning,
+    bulkOcrStatus: state.bulkOcrStatus,
+    images: state.images,
+    isImportingDataset: state.isImportingDataset,
+    datasetImportProgress: state.datasetImportProgress,
+  };
+
+  const headerProps = {
+    projectType: state.projectType,
+    project: state.project,
+    isBlocked: state.isBlocked,
+    snapshotsCount: state.snapshots.length,
+    hasCurrentImage: Boolean(state.currentImage),
+    onSelectFolder: actions.handleSelectFolder,
+    onOpenLoadPage: actions.openLoadPageDialog,
+    onOpenLoadProject: actions.openLoadProjectDialog,
+    onOpenSaveDialog: actions.openSaveDialog,
+    onImportOcrDataset: actions.handleImportOcrDataset,
+    onOpenTraining: actions.openTrainingPage,
+    onBack: actions.handleBackToRoot,
+    onLogout: state.logoutUser,
+    openSettingsDialog: state.openSettingsDialog,
+    maxFrames: state.maxFrames,
+    stride: state.stride,
+    onSettingsClose: actions.closeSettingsDialog,
+    onSettingsSubmit: actions.handleSettingsSubmit,
+    onMaxFramesChange: actions.handleMaxFramesChange,
+    onStrideChange: actions.handleStrideChange,
+    showOcrActions: state.isOCRProject,
+  };
+
+  const ocrWorkspaceProps = {
+    images: state.images,
+    currentIndex: state.currentIndex,
+    currentImage: state.currentImage,
+    projectType: state.projectType,
+    projectId: state.projectId,
+    imageEndpointBase: state.imageEndpointBase,
+    categories: state.categories,
+    activeCategoryId: state.activeCategoryId,
+    showOcrCategoryPanel: state.showOcrCategoryPanel,
+    maxOcrCategoryHeight: state.maxOcrCategoryHeight,
+    ocrCategoryPanelRef: state.ocrCategoryPanelRef,
+    selectedShapeIds: state.selectedShapeIds,
+    selectionScrollSignal: state.selectionScrollSignal,
+    ocrTool: state.ocrTool,
+    showOcrText: state.showOcrText,
+    isBlocked: state.isBlocked,
+    isBulkOcrRunning: state.isBulkOcrRunning,
+    canUndo: state.canUndo,
+    canRedo: state.canRedo,
+    isApplyingHistory: state.isApplyingHistory,
+    selectedOcrModels: state.selectedOcrModels,
+    onToggleOcrModel: actions.toggleOcrModel,
+    onSelectCategory: actions.handleSelectCategory,
+    onAddCategory: actions.handleAddCategory,
+    onDeleteCategory: actions.handleDeleteCategory,
+    onColorChange: actions.handleColorChange,
+    onRenameCategory: actions.handleRenameCategory,
+    onSelectShapesFromList: actions.handleSelectShapesFromList,
+    onSelectShapesFromImage: actions.handleSelectShapesFromImage,
+    onOcrToolChange: actions.handleOcrToolChange,
+    onToggleShowOcrText: actions.handleShowOcrTextChange,
+    onImageUpdated: actions.handleImageUpdated,
+    onStartBlocking: actions.startBlocking,
+    onStopBlocking: actions.stopBlocking,
+    onRunInference: actions.handleFullInference,
+    onRunInferenceAll: actions.handleBulkDetectRecognize,
+    onUndo: actions.handleUndo,
+    onRedo: actions.handleRedo,
+    onPrevImage: actions.handlePrevImage,
+    onNextImage: actions.handleNextImage,
+    onThumbnailClick: actions.handleThumbnailClick,
+    onPropagateMask: actions.handlePropagateMask,
+    onClearLabels: actions.handleClearLabels,
+    viewportControls: state.ocrViewportControls,
+    onRegisterViewportControls: actions.registerOcrViewportControls,
+  };
+
+  const segmentationWorkspaceProps = {
+    images: state.images,
+    currentIndex: state.currentIndex,
+    categories: state.categories,
+    activeCategoryId: state.activeCategoryId,
+    highlightCategoryId: state.highlightCategoryId,
+    highlightSignal: state.highlightSignal,
+    promptLoading: state.promptLoading,
+    loading: state.loading,
+    isBlocked: state.isBlocked,
+    projectType: state.projectType,
+    onGenerateFromPrompt: actions.handleGenerateFromPrompt,
+    onSelectCategory: actions.handleSelectCategory,
+    onAddCategory: actions.handleAddCategory,
+    onDeleteCategory: actions.handleDeleteCategory,
+    onColorChange: actions.handleColorChange,
+    onImageUpdated: actions.handleImageUpdated,
+    onPointsUpdated: actions.handlePointsUpdated,
+    onRequireCategory: actions.handleRequireCategory,
+    onStartBlocking: actions.startBlocking,
+    onStopBlocking: actions.stopBlocking,
+    onPrevImage: actions.handlePrevImage,
+    onNextImage: actions.handleNextImage,
+    onPropagateMask: actions.handlePropagateMask,
+    onClearLabels: actions.handleClearLabels,
+    onThumbnailClick: actions.handleThumbnailClick,
+    viewportControls: state.segmentationViewportControls,
+    onRegisterViewportControls: actions.registerSegmentationViewportControls,
+  };
+
+  const snapshotDialogProps = {
+    loadDialogMode: state.loadDialogMode,
+    snapshots: state.snapshots,
+    currentImage: state.currentImage,
+    isBlocked: state.isBlocked,
+    onCloseLoadDialog: actions.closeLoadDialog,
+    onLoadSnapshot: actions.handleLoadSnapshot,
+    onDeleteSnapshot: actions.handleDeleteSnapshot,
+    saveDialogOpen: state.saveDialogOpen,
+    snapshotName: state.snapshotName,
+    onSnapshotNameChange: actions.handleSnapshotNameChange,
+    onCloseSaveDialog: actions.closeSaveDialog,
+    onConfirmSaveSnapshot: actions.handleConfirmSaveSnapshot,
+  };
+
+  return {
+    overlayProps,
+    headerProps,
+    ocrWorkspaceProps,
+    segmentationWorkspaceProps,
+    snapshotDialogProps,
+    notification: state.notification,
+    onNotificationClose: actions.handleNotificationClose,
+    hasImages,
+    loading: state.loading,
+    isOCRProject: state.isOCRProject,
+    isBlocked: state.isBlocked,
+  };
+};
