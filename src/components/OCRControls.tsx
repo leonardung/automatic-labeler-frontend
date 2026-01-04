@@ -57,25 +57,32 @@ const OCRControls: React.FC<OCRControlsProps> = ({
   savedConfig,
 }) => {
   const DETECT_MODELS = ["PP-OCRv5_server_det", "PP-OCRv5_mobile_det", "PP-OCRv4_server_det", "PP-OCRv4_mobile_det"];
-  const RECOGNIZE_MODELS = ["PP-OCRv5_server_rec", "PP-OCRv5_mobile_rec", "PP-OCRv4_server_rec_doc"];
+  const RECOGNIZE_MODELS = ["latin_PP-OCRv5_mobile_rec", "PP-OCRv5_server_rec", "PP-OCRv5_mobile_rec", "PP-OCRv4_server_rec_doc"];
+  const DEFAULT_DETECT_MODEL = DETECT_MODELS[0];
+  const DEFAULT_RECOGNIZE_MODEL = RECOGNIZE_MODELS[0];
+  const DEFAULT_CHECKPOINT_TYPE: "best" | "latest" = "best";
+  const DEFAULT_DETECT_TOLERANCE = 0.2;
+  const DEFAULT_DETECT_THRESH = 0.3;
+  const DEFAULT_DETECT_BOX_THRESH = 0.6;
+  const DEFAULT_DETECT_UNCLIP_RATIO = 1.5;
 
   const [configOpen, setConfigOpen] = useState(false);
   const [activeModelTab, setActiveModelTab] = useState<TrainingModelKey>("det");
   const [detSource, setDetSource] = useState<ModelSource>("pretrained");
   const [recSource, setRecSource] = useState<ModelSource>("pretrained");
-  const [detectModel, setDetectModel] = useState(DETECT_MODELS[0]);
-  const [detectTolerance, setDetectTolerance] = useState<number>(0.2);
-  const [detectThresh, setDetectThresh] = useState<number>(0.3);
-  const [detectBoxThresh, setDetectBoxThresh] = useState<number>(0.6);
-  const [detectUnclipRatio, setDetectUnclipRatio] = useState<number>(1.5);
-  const [recognizeModel, setRecognizeModel] = useState(RECOGNIZE_MODELS[0]);
+  const [detectModel, setDetectModel] = useState(DEFAULT_DETECT_MODEL);
+  const [detectTolerance, setDetectTolerance] = useState<number>(DEFAULT_DETECT_TOLERANCE);
+  const [detectThresh, setDetectThresh] = useState<number>(DEFAULT_DETECT_THRESH);
+  const [detectBoxThresh, setDetectBoxThresh] = useState<number>(DEFAULT_DETECT_BOX_THRESH);
+  const [detectUnclipRatio, setDetectUnclipRatio] = useState<number>(DEFAULT_DETECT_UNCLIP_RATIO);
+  const [recognizeModel, setRecognizeModel] = useState(DEFAULT_RECOGNIZE_MODEL);
   const [savingConfig, setSavingConfig] = useState(false);
   const [detRunId, setDetRunId] = useState<string>("");
   const [recRunId, setRecRunId] = useState<string>("");
   const [kieRunId, setKieRunId] = useState<string>("");
-  const [detCheckpointType, setDetCheckpointType] = useState<"best" | "latest">("best");
-  const [recCheckpointType, setRecCheckpointType] = useState<"best" | "latest">("best");
-  const [kieCheckpointType, setKieCheckpointType] = useState<"best" | "latest">("best");
+  const [detCheckpointType, setDetCheckpointType] = useState<"best" | "latest">(DEFAULT_CHECKPOINT_TYPE);
+  const [recCheckpointType, setRecCheckpointType] = useState<"best" | "latest">(DEFAULT_CHECKPOINT_TYPE);
+  const [kieCheckpointType, setKieCheckpointType] = useState<"best" | "latest">(DEFAULT_CHECKPOINT_TYPE);
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [runsByTarget, setRunsByTarget] = useState<Record<TrainingModelKey, TrainingRun[]>>({
     det: [],
@@ -179,6 +186,23 @@ const OCRControls: React.FC<OCRControlsProps> = ({
     if (!loadingRuns && projectId) {
       void loadRuns();
     }
+  };
+
+  const handleResetConfig = () => {
+    setDetSource("pretrained");
+    setRecSource("pretrained");
+    setDetectModel(DEFAULT_DETECT_MODEL);
+    setRecognizeModel(DEFAULT_RECOGNIZE_MODEL);
+    setDetectTolerance(DEFAULT_DETECT_TOLERANCE);
+    setDetectThresh(DEFAULT_DETECT_THRESH);
+    setDetectBoxThresh(DEFAULT_DETECT_BOX_THRESH);
+    setDetectUnclipRatio(DEFAULT_DETECT_UNCLIP_RATIO);
+    setDetRunId("");
+    setRecRunId("");
+    setKieRunId("");
+    setDetCheckpointType(DEFAULT_CHECKPOINT_TYPE);
+    setRecCheckpointType(DEFAULT_CHECKPOINT_TYPE);
+    setKieCheckpointType(DEFAULT_CHECKPOINT_TYPE);
   };
 
   const handleSaveConfig = async () => {
@@ -603,6 +627,9 @@ const OCRControls: React.FC<OCRControlsProps> = ({
           </Box>
         </DialogContent>
         <DialogActions>
+          <Button onClick={handleResetConfig} disabled={savingConfig}>
+            Reset
+          </Button>
           <Button onClick={handleSaveConfig} disabled={savingConfig}>
             Save
           </Button>

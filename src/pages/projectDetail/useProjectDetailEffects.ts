@@ -135,7 +135,7 @@ export const useProjectDetailEffects = (
       try {
         startBlocking("Loading OCR models...");
         const defaultDetModel = "PP-OCRv5_mobile_det";
-        const defaultRecModel = "PP-OCRv5_server_rec";
+        const defaultRecModel = "latin_PP-OCRv5_mobile_rec";
         let savedConfig: OcrModelConfig | null = null;
 
         if (projectId) {
