@@ -44,6 +44,7 @@ const ViewportControls = ({ controls, disabled }: ViewportControlsProps) => (
           variant="outlined"
           size="small"
           startIcon={<FitScreenIcon />}
+          sx={{ minWidth: 98 }}
           onClick={controls?.toggleFit}
           disabled={!controls || disabled}
         >
