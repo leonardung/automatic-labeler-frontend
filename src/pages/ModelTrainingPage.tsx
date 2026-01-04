@@ -123,6 +123,9 @@ function ModelTrainingPage() {
     rec: false,
     kie: false,
   });
+  const [runNameDraft, setRunNameDraft] = useState("");
+  const [runNameTargetId, setRunNameTargetId] = useState<string | null>(null);
+  const [savingRunName, setSavingRunName] = useState(false);
 
   const logContainerRef = useRef<HTMLDivElement | null>(null);
   const selectedJobIdRef = useRef<string | null>(null);
@@ -269,6 +272,16 @@ function ModelTrainingPage() {
     }
   }, [projectNumericId]);
 
+  const getSelectedRunForModel = (model: TrainingModelKey) => {
+    const runsForModel = runsByModel[model] || [];
+    const selectedId =
+      selectedRunByModel[model] && runsForModel.some((run) => run.id === selectedRunByModel[model])
+        ? selectedRunByModel[model]
+        : runsForModel[0]?.id ?? null;
+    const selectedRun = runsForModel.find((run) => run.id === selectedId) || runsForModel[0] || null;
+    return { runsForModel, selectedRunId: selectedId, selectedRun };
+  };
+
   const metricKeysForRun = (run?: TrainingRun | null) => {
     const keys = new Set<string>();
     if (!run) return [];
@@ -285,6 +298,10 @@ function ModelTrainingPage() {
     }
     return Array.from(keys);
   };
+
+  const activeRunSelection = getSelectedRunForModel(activeModel);
+  const activeSelectedRun = activeRunSelection.selectedRun;
+  const activeSelectedRunId = activeRunSelection.selectedRunId;
 
   const loadJobs = async (selectLatest = false, managePolling = false): Promise<TrainingJob[]> => {
     if (selectLatest) {
@@ -591,6 +608,13 @@ function ModelTrainingPage() {
       return changed ? next : prev;
     });
   }, [runsByModel, selectedRunByModel]);
+
+  useEffect(() => {
+    if (activeSelectedRunId !== runNameTargetId) {
+      setRunNameDraft(activeSelectedRun?.name || "");
+      setRunNameTargetId(activeSelectedRunId);
+    }
+  }, [activeSelectedRunId, activeSelectedRun, runNameTargetId]);
 
   useEffect(() => {
     if (!hasActiveJobs(jobs)) {
@@ -1028,6 +1052,42 @@ function ModelTrainingPage() {
     }
   };
 
+  const handleSaveRunName = async (run: TrainingRun) => {
+    if (!projectNumericId) {
+      notify("A project must be loaded before renaming a run.", "warning");
+      return;
+    }
+    const nameValue = runNameDraft.trim();
+    setSavingRunName(true);
+    try {
+      const response = await axiosInstance.patch<{ run: TrainingRun }>("ocr-training/runs/", {
+        project_id: projectNumericId,
+        run_id: run.id,
+        name: nameValue,
+      });
+      const updated = response.data?.run;
+      if (!updated) {
+        throw new Error("Missing updated run.");
+      }
+      setRunsByModel((prev) => {
+        const existing = prev[updated.target] || [];
+        const has = existing.some((item) => item.id === updated.id);
+        const nextList = has
+          ? existing.map((item) => (item.id === updated.id ? { ...item, ...updated } : item))
+          : [updated, ...existing];
+        return { ...prev, [updated.target]: nextList };
+      });
+      setRunNameDraft(updated.name || "");
+      setRunNameTargetId(updated.id);
+      notify("Saved run name.", "success");
+    } catch (error) {
+      console.error("Failed to save run name", error);
+      notify("Could not save run name.", "error");
+    } finally {
+      setSavingRunName(false);
+    }
+  };
+
   const currentJob =
     selectedJob || jobs.find((job) => job.targets.includes(activeModel)) || jobs[0] || null;
   const datasetInfo = datasetSummary || currentJob?.dataset;
@@ -1043,7 +1103,11 @@ function ModelTrainingPage() {
     );
   }, [currentJob]);
   const formatTime = (value?: string | null) => (value ? new Date(value).toLocaleString() : "Not started");
-  const formatSavedRunId = (run: TrainingRun) => (run.job_id || run.id).slice(0, 8);
+  const formatSavedRunLabel = (run: TrainingRun) => {
+    const id = (run.job_id || run.id).slice(0, 8);
+    const name = run.name?.trim();
+    return name ? `${name} (${id})` : `Run ${id}`;
+  };
 
   const busy = loadingDefaults || saving;
   const runsBusy = loadingJobs || loadingJobDetail;
@@ -1277,16 +1341,16 @@ function ModelTrainingPage() {
                 : jobsForModel.length
                 ? jobsForModel[0]
                 : null;
-            const runsForModel = runsByModel[model] || [];
-            const selectedRunIdModel =
-              selectedRunByModel[model] && runsForModel.some((run) => run.id === selectedRunByModel[model])
-                ? selectedRunByModel[model]
-                : runsForModel[0]?.id ?? null;
-            const selectedRunModel =
-              runsForModel.find((run) => run.id === selectedRunIdModel) || runsForModel[0] || null;
+            const {
+              runsForModel,
+              selectedRunId: selectedRunIdModel,
+              selectedRun: selectedRunModel,
+            } = getSelectedRunForModel(model);
             const metricOptions = metricKeysForRun(selectedRunModel);
             const selectedMetrics = selectedMetricsByModel[model] || [];
             const metricsToPlot = selectedMetrics.filter((metric) => metricOptions.includes(metric));
+            const currentRunName = selectedRunModel?.name || "";
+            const runNameDirty = selectedRunModel ? runNameDraft.trim() !== currentRunName : false;
             return (
               <Box key={model}>
                 <Tabs
@@ -1572,9 +1636,11 @@ function ModelTrainingPage() {
                             return (
                               <Box
                                 key={run.id}
-                                onClick={() =>
-                                  setSelectedRunByModel((prev) => ({ ...prev, [model]: run.id }))
-                                }
+                                onClick={() => {
+                                  setSelectedRunByModel((prev) => ({ ...prev, [model]: run.id }));
+                                  setRunNameDraft(run.name || "");
+                                  setRunNameTargetId(run.id);
+                                }}
                                 sx={{
                                   border: "1px solid",
                                   borderColor: selected ? "primary.main" : "rgba(255,255,255,0.08)",
@@ -1587,7 +1653,7 @@ function ModelTrainingPage() {
                               >
                                 <Box display="flex" alignItems="center" justifyContent="space-between">
                                   <Typography variant="subtitle1" fontWeight={700}>
-                                    Run {formatSavedRunId(run)}
+                                    {formatSavedRunLabel(run)}
                                   </Typography>
                                   <Chip
                                     label={(run.status || "unknown").toUpperCase()}
@@ -1636,7 +1702,7 @@ function ModelTrainingPage() {
                             <Box display="flex" alignItems="center" justifyContent="space-between">
                               <Box>
                                 <Typography variant="subtitle1" fontWeight={700}>
-                                  Run {formatSavedRunId(selectedRunModel)} metrics
+                                  Metrics for {formatSavedRunLabel(selectedRunModel)}
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
                                   Steps tracked: {selectedRunModel.metrics_log?.length ?? 0}
@@ -1648,6 +1714,32 @@ function ModelTrainingPage() {
                                 size="small"
                               />
                             </Box>
+                            <Stack spacing={0.5}>
+                              <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "nowrap" }}>
+                                <TextField
+                                  label="Run name"
+                                  size="small"
+                                  fullWidth
+                                  value={runNameDraft}
+                                  onChange={(e) => setRunNameDraft(e.target.value)}
+                                  inputProps={{ maxLength: 128 }}
+                                  disabled={savingRunName}
+                                  sx={{ flex: 1, minWidth: 0 }}
+                                />
+                                <Button
+                                  variant="contained"
+                                  size="small"
+                                  onClick={() => handleSaveRunName(selectedRunModel)}
+                                  disabled={!runNameDirty || savingRunName}
+                                  sx={{ height: 40, minWidth: 110, whiteSpace: "nowrap" }}
+                                >
+                                  {savingRunName ? "Saving..." : "Save Model Name"}
+                                </Button>
+                              </Box>
+                              <Typography variant="caption" color="text.secondary">
+                                Shown in Configure models. Leave empty to clear.
+                              </Typography>
+                            </Stack>
                             <Typography variant="body2" color="text.secondary">
                               Best summary: {summarizeMetric(selectedRunModel.best_metric)}
                             </Typography>

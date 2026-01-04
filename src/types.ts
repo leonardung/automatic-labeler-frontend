@@ -147,6 +147,7 @@ export interface TrainingRun {
   project_id: number;
   target: TrainingModelKey;
   status: TrainingJobStatus;
+  name?: string | null;
   models_dir: string;
   best_checkpoint?: string;
   latest_checkpoint?: string;

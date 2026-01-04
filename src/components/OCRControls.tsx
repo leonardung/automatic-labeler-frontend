@@ -106,6 +106,8 @@ const OCRControls: React.FC<OCRControlsProps> = ({
   };
 
   const formatRunLabel = (run: TrainingRun) => {
+    const name = run.name?.trim();
+    const namePrefix = name ? `${name} | ` : "";
     const created = run.created_at ? new Date(run.created_at).toLocaleString() : "";
     const bestMetricKeys = run.best_metric ? Object.keys(run.best_metric) : [];
     const bestSummary =
@@ -115,7 +117,7 @@ const OCRControls: React.FC<OCRControlsProps> = ({
             .map((k) => `${k}=${run.best_metric?.[k]}`)
             .join(", ")}`
         : "best: n/a";
-    return `${run.target.toUpperCase()} | ${created} | ${run.status} | ${bestSummary}`;
+    return `${namePrefix}${run.target.toUpperCase()} | ${created} | ${run.status} | ${bestSummary}`;
   };
 
   const handleOpenConfig = () => {
