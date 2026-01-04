@@ -35,6 +35,14 @@ import type {
 
 type ModelOverrides = Partial<Record<TrainingModelKey, TrainingModelConfigSummary & { epoch_num?: number }>>;
 
+type ResumeCheckpointType = "best" | "latest";
+
+type ResumeSelection = {
+  enabled: boolean;
+  runId: string | null;
+  checkpointType: ResumeCheckpointType;
+};
+
 type ModelTabView = "configure" | "runs" | "models";
 
 interface SnackState {
@@ -70,6 +78,23 @@ const initialPanelTabs: Record<TrainingModelKey, ModelTabView> = {
   kie: "configure",
 };
 
+const initialResumeByModel: Record<TrainingModelKey, ResumeSelection> = {
+  det: { enabled: false, runId: null, checkpointType: "latest" },
+  rec: { enabled: false, runId: null, checkpointType: "latest" },
+  kie: { enabled: false, runId: null, checkpointType: "latest" },
+};
+
+const runHasCheckpoint = (run: TrainingRun) => Boolean(run.best_checkpoint || run.latest_checkpoint);
+
+const pickCheckpointType = (run: TrainingRun | null, preferred: ResumeCheckpointType): ResumeCheckpointType => {
+  if (!run) return preferred;
+  if (preferred === "latest" && run.latest_checkpoint) return "latest";
+  if (preferred === "best" && run.best_checkpoint) return "best";
+  if (run.latest_checkpoint) return "latest";
+  if (run.best_checkpoint) return "best";
+  return preferred;
+};
+
 function ModelTrainingPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -88,6 +113,7 @@ function ModelTrainingPage() {
     rec: {},
     kie: {},
   });
+  const [resumeByModel, setResumeByModel] = useState<Record<TrainingModelKey, ResumeSelection>>(initialResumeByModel);
   const [jobs, setJobs] = useState<TrainingJob[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedJob, setSelectedJob] = useState<TrainingJob | null>(null);
@@ -553,6 +579,15 @@ function ModelTrainingPage() {
   }, [panelTabs, activeModel, loadTrainingRuns]);
 
   useEffect(() => {
+    const resumeState = resumeByModel[activeModel];
+    if (!resumeState?.enabled) return;
+    if (loadingRuns || runsRequestedByModel[activeModel]) return;
+    if ((runsByModel[activeModel] || []).length > 0) return;
+    setRunsRequestedByModel((prev) => ({ ...prev, [activeModel]: true }));
+    loadTrainingRuns();
+  }, [resumeByModel, activeModel, runsByModel, loadingRuns, runsRequestedByModel, loadTrainingRuns]);
+
+  useEffect(() => {
     setSelectedRunByModel((prev) => {
       const next = { ...prev };
       let changed = false;
@@ -570,6 +605,37 @@ function ModelTrainingPage() {
         }
         if (fallback !== current) {
           next[key] = fallback;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [runsByModel]);
+
+  useEffect(() => {
+    setResumeByModel((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      (["det", "rec", "kie"] as TrainingModelKey[]).forEach((key) => {
+        const state = prev[key];
+        if (!state?.enabled) return;
+        const availableRuns = (runsByModel[key] || []).filter(runHasCheckpoint);
+        if (!availableRuns.length) {
+          if (state.runId !== null) {
+            next[key] = { ...state, runId: null };
+            changed = true;
+          }
+          return;
+        }
+        const selected = availableRuns.find((run) => run.id === state.runId) || null;
+        if (!selected) {
+          next[key] = { ...state, runId: availableRuns[0].id };
+          changed = true;
+          return;
+        }
+        const nextType = pickCheckpointType(selected, state.checkpointType);
+        if (nextType !== state.checkpointType) {
+          next[key] = { ...state, checkpointType: nextType };
           changed = true;
         }
       });
@@ -721,6 +787,32 @@ function ModelTrainingPage() {
           )
         );
 
+      const resumeState = resumeByModel[activeModel];
+      let resumePayload:
+        | Partial<Record<TrainingModelKey, { run_id: string; checkpoint_type: ResumeCheckpointType }>>
+        | undefined;
+      if (resumeState?.enabled) {
+        if (!resumeState.runId) {
+          notify("Select a saved run to resume from.", "warning");
+          return;
+        }
+        const resumeRun = (runsByModel[activeModel] || []).find((run) => run.id === resumeState.runId);
+        const hasCheckpoint =
+          resumeState.checkpointType === "best"
+            ? Boolean(resumeRun?.best_checkpoint)
+            : Boolean(resumeRun?.latest_checkpoint);
+        if (!resumeRun || !hasCheckpoint) {
+          notify("Selected run does not have the requested checkpoint.", "warning");
+          return;
+        }
+        resumePayload = {
+          [activeModel]: {
+            run_id: resumeState.runId,
+            checkpoint_type: resumeState.checkpointType,
+          },
+        };
+      }
+
       const payload = {
         project_id: projectNumericId,
         models: [activeModel],
@@ -735,6 +827,7 @@ function ModelTrainingPage() {
             kie: filteredModels("kie"),
           },
         },
+        ...(resumePayload ? { resume: resumePayload } : {}),
       };
       const response = await axiosInstance.post<{ job: TrainingJob }>("ocr-training/start/", payload);
       const job = response.data.job;
@@ -1351,6 +1444,20 @@ function ModelTrainingPage() {
             const metricsToPlot = selectedMetrics.filter((metric) => metricOptions.includes(metric));
             const currentRunName = selectedRunModel?.name || "";
             const runNameDirty = selectedRunModel ? runNameDraft.trim() !== currentRunName : false;
+            const resumeState = resumeByModel[model];
+            const resumeRuns = (runsByModel[model] || []).filter(runHasCheckpoint);
+            const selectedResumeRun = resumeState?.runId
+              ? resumeRuns.find((run) => run.id === resumeState.runId) || null
+              : null;
+            const resumeCheckpointType = resumeState?.checkpointType || "latest";
+            const resumeCheckpointAvailable =
+              resumeCheckpointType === "best"
+                ? Boolean(selectedResumeRun?.best_checkpoint)
+                : Boolean(selectedResumeRun?.latest_checkpoint);
+            const resumeInvalid = Boolean(
+              resumeState?.enabled &&
+                (!resumeState.runId || !selectedResumeRun || !resumeCheckpointAvailable)
+            );
             return (
               <Box key={model}>
                 <Tabs
@@ -1380,11 +1487,100 @@ function ModelTrainingPage() {
                     </Box>
                     {renderModelFields(model)}
                     <Divider sx={{ my: 2 }} />
+                    <Box>
+                      <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                        <Typography variant="subtitle2" color="text.secondary">
+                          Resume from checkpoint
+                        </Typography>
+                        <Button size="small" onClick={loadTrainingRuns} disabled={loadingRuns}>
+                          {loadingRuns ? "Loading..." : "Refresh runs"}
+                        </Button>
+                      </Box>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={Boolean(resumeState?.enabled)}
+                            onChange={(e) => {
+                              const enabled = e.target.checked;
+                              setResumeByModel((prev) => {
+                                const current = prev[model] || initialResumeByModel[model];
+                                const nextRunId =
+                                  enabled && !current.runId ? resumeRuns[0]?.id ?? null : current.runId;
+                                return {
+                                  ...prev,
+                                  [model]: { ...current, enabled, runId: nextRunId },
+                                };
+                              });
+                            }}
+                          />
+                        }
+                        label="Resume from a saved run"
+                      />
+                      {resumeState?.enabled && (
+                        <Stack spacing={1.25} sx={{ mt: 1 }}>
+                          <TextField
+                            select
+                            size="small"
+                            label="Saved run"
+                            value={resumeState.runId || ""}
+                            onChange={(e) =>
+                              setResumeByModel((prev) => ({
+                                ...prev,
+                                [model]: { ...prev[model], runId: e.target.value },
+                              }))
+                            }
+                            disabled={resumeRuns.length === 0}
+                            helperText={
+                              resumeRuns.length === 0
+                                ? "No saved checkpoints available yet."
+                                : "Select a run to continue training."
+                            }
+                          >
+                            {resumeRuns.map((run) => (
+                              <MenuItem key={run.id} value={run.id}>
+                                {formatSavedRunLabel(run)}
+                              </MenuItem>
+                            ))}
+                          </TextField>
+                          <TextField
+                            select
+                            size="small"
+                            label="Checkpoint type"
+                            value={resumeCheckpointType}
+                            onChange={(e) =>
+                              setResumeByModel((prev) => ({
+                                ...prev,
+                                [model]: { ...prev[model], checkpointType: e.target.value as ResumeCheckpointType },
+                              }))
+                            }
+                            disabled={!selectedResumeRun}
+                            helperText={
+                              selectedResumeRun
+                                ? "Best uses validation peak; latest continues from the newest checkpoint."
+                                : "Select a run first."
+                            }
+                          >
+                            <MenuItem value="latest" disabled={!selectedResumeRun?.latest_checkpoint}>
+                              Latest
+                            </MenuItem>
+                            <MenuItem value="best" disabled={!selectedResumeRun?.best_checkpoint}>
+                              Best
+                            </MenuItem>
+                          </TextField>
+                          {resumeRuns.length > 0 && resumeState.runId && !resumeCheckpointAvailable && (
+                            <Typography variant="caption" color="warning.main">
+                              The selected checkpoint type is not available for this run.
+                            </Typography>
+                          )}
+                        </Stack>
+                      )}
+                    </Box>
+                    <Divider sx={{ my: 2 }} />
                     <Box display="flex" justifyContent="flex-end">
                       <Button
                         variant="contained"
                         color="success"
-                        disabled={saving || !projectNumericId}
+                        disabled={saving || !projectNumericId || resumeInvalid}
                         onClick={handleStart}
                       >
                         Start {modelLabels[model]} Training
