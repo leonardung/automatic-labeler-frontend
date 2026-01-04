@@ -7,11 +7,12 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControlLabel,
   MenuItem,
-  Switch,
+  Tab,
+  Tabs,
   TextField,
   Tooltip,
+  Typography,
 } from "@mui/material";
 import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
 import TextFieldsIcon from "@mui/icons-material/TextFields";
@@ -38,6 +39,8 @@ interface OCRControlsProps {
   onToggleModel: (model: keyof SelectedOcrModels) => void;
 }
 
+type ModelSource = "pretrained" | "finetuned";
+
 const OCRControls: React.FC<OCRControlsProps> = ({
   image,
   projectType,
@@ -52,17 +55,15 @@ const OCRControls: React.FC<OCRControlsProps> = ({
 }) => {
   const DETECT_MODELS = ["PP-OCRv5_server_det", "PP-OCRv5_mobile_det", "PP-OCRv4_server_det", "PP-OCRv4_mobile_det"];
   const RECOGNIZE_MODELS = ["PP-OCRv5_server_rec", "PP-OCRv5_mobile_rec", "PP-OCRv4_server_rec_doc"];
-  const CLASSIFY_MODELS: string[] = [];
 
   const [configOpen, setConfigOpen] = useState(false);
+  const [activeModelTab, setActiveModelTab] = useState<TrainingModelKey>("det");
+  const [detSource, setDetSource] = useState<ModelSource>("pretrained");
+  const [recSource, setRecSource] = useState<ModelSource>("pretrained");
   const [detectModel, setDetectModel] = useState(DETECT_MODELS[0]);
   const [detectTolerance, setDetectTolerance] = useState<number>(0.2);
   const [recognizeModel, setRecognizeModel] = useState(RECOGNIZE_MODELS[0]);
-  const [classifyModel, setClassifyModel] = useState<string>("");
   const [savingConfig, setSavingConfig] = useState(false);
-  const [useTrainedDet, setUseTrainedDet] = useState(false);
-  const [useTrainedRec, setUseTrainedRec] = useState(false);
-  const [useTrainedKie, setUseTrainedKie] = useState(false);
   const [detRunId, setDetRunId] = useState<string>("");
   const [recRunId, setRecRunId] = useState<string>("");
   const [kieRunId, setKieRunId] = useState<string>("");
@@ -75,6 +76,12 @@ const OCRControls: React.FC<OCRControlsProps> = ({
     rec: [],
     kie: [],
   });
+
+  useEffect(() => {
+    if (projectType !== "ocr_kie" && activeModelTab === "kie") {
+      setActiveModelTab("det");
+    }
+  }, [activeModelTab, projectType]);
 
   const loadRuns = async () => {
     if (!projectId) return;
@@ -97,14 +104,6 @@ const OCRControls: React.FC<OCRControlsProps> = ({
       setLoadingRuns(false);
     }
   };
-
-  const trainedKieModelKeys =
-    projectId && runsByTarget.kie.length > 0
-      ? runsByTarget.kie.map((run) => `trained-project-${projectId}-kie-${run.id}`)
-      : [];
-  const classifyModelOptions = Array.from(
-    new Set<string>([...CLASSIFY_MODELS, ...trainedKieModelKeys, classifyModel].filter(Boolean)),
-  );
 
   const formatRunLabel = (run: TrainingRun) => {
     const created = run.created_at ? new Date(run.created_at).toLocaleString() : "";
@@ -132,9 +131,12 @@ const OCRControls: React.FC<OCRControlsProps> = ({
       onStartBlocking("Applying OCR models...");
       let nextDetectModel = detectModel;
       let nextRecognizeModel = recognizeModel;
-      let nextClassifyModel = classifyModel;
+      let nextClassifyModel: string | undefined;
 
       const targets: TrainingModelKey[] = [];
+      const useTrainedDet = detSource === "finetuned";
+      const useTrainedRec = recSource === "finetuned";
+      const useTrainedKie = projectType === "ocr_kie" && (runsByTarget.kie.length > 0 || kieRunId);
       if (useTrainedDet) targets.push("det");
       if (useTrainedRec) targets.push("rec");
       if (useTrainedKie) targets.push("kie");
@@ -145,16 +147,22 @@ const OCRControls: React.FC<OCRControlsProps> = ({
         }
         const runsPayload: Record<string, string> = {};
         const checkpointPayload: Record<string, string> = {};
-        if (useTrainedDet && detRunId) {
-          runsPayload.det = detRunId;
+        if (useTrainedDet) {
+          if (detRunId) {
+            runsPayload.det = detRunId;
+          }
           checkpointPayload.det = detCheckpointType;
         }
-        if (useTrainedRec && recRunId) {
-          runsPayload.rec = recRunId;
+        if (useTrainedRec) {
+          if (recRunId) {
+            runsPayload.rec = recRunId;
+          }
           checkpointPayload.rec = recCheckpointType;
         }
-        if (useTrainedKie && kieRunId) {
-          runsPayload.kie = kieRunId;
+        if (useTrainedKie) {
+          if (kieRunId) {
+            runsPayload.kie = kieRunId;
+          }
           checkpointPayload.kie = kieCheckpointType;
         }
         const response = await axiosInstance.post(`${endpointBase}/configure_trained_models/`, {
@@ -174,14 +182,13 @@ const OCRControls: React.FC<OCRControlsProps> = ({
         }
         if (useTrainedKie && loaded.kie?.model_key) {
           nextClassifyModel = loaded.kie.model_key as string;
-          setClassifyModel(nextClassifyModel);
         }
       }
 
       await axiosInstance.post(`${endpointBase}/configure_models/`, {
         detect_model: nextDetectModel,
         recognize_model: nextRecognizeModel,
-        classify_model: nextClassifyModel || undefined,
+        ...(nextClassifyModel ? { classify_model: nextClassifyModel } : {}),
       });
       setConfigOpen(false);
     } catch (error) {
@@ -269,167 +276,72 @@ const OCRControls: React.FC<OCRControlsProps> = ({
         </Button>
       </Box>
 
-      <Dialog open={configOpen} onClose={() => setConfigOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={configOpen}
+        onClose={() => setConfigOpen(false)}
+        maxWidth={false}
+        PaperProps={{
+          sx: {
+            width: { xs: "92vw", sm: 720 },
+            maxWidth: { xs: "92vw", sm: 720 },
+            height: { xs: "80vh", sm: 620 },
+          },
+        }}
+      >
         <DialogTitle>Configure OCR models</DialogTitle>
-        <DialogContent dividers>
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
-            <TextField
-              select
-              fullWidth
-              label="Detect model"
-              value={detectModel}
-              onChange={(e) => setDetectModel(e.target.value)}
-            >
-              {DETECT_MODELS.map((model) => (
-                <MenuItem key={model} value={model}>
-                  {model}
-                </MenuItem>
-              ))}
-            </TextField>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={useTrainedDet}
-                  onChange={(e) => setUseTrainedDet(e.target.checked)}
-                  disabled={!projectId}
-                />
-              }
-              label="Use trained detection model for this project"
-            />
-            {useTrainedDet && (
+        <DialogContent dividers sx={{ overflowY: "auto" }}>
+          <Tabs
+            value={activeModelTab}
+            onChange={(_, value) => setActiveModelTab(value as TrainingModelKey)}
+            variant="fullWidth"
+            sx={{ borderBottom: "1px solid", borderColor: "divider" }}
+          >
+            <Tab label="Detection" value="det" />
+            <Tab label="Recognition" value="rec" />
+            {projectType === "ocr_kie" && <Tab label="KIE" value="kie" />}
+          </Tabs>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 2 }}>
+            {activeModelTab === "det" && (
               <>
-                <TextField
-                  select
-                  fullWidth
-                  label="Detection run"
-                  value={detRunId}
-                  onChange={(e) => setDetRunId(e.target.value)}
-                  disabled={!projectId || loadingRuns || runsByTarget.det.length === 0}
-                  helperText={
-                    runsByTarget.det.length === 0
-                      ? "No completed detection runs found."
-                      : "Select which run to load (optional)."
-                  }
+                <Tabs
+                  value={detSource}
+                  onChange={(_, value) => setDetSource(value as ModelSource)}
+                  variant="fullWidth"
                 >
-                  {runsByTarget.det.map((run) => (
-                    <MenuItem key={run.id} value={run.id}>
-                      {formatRunLabel(run)}
-                    </MenuItem>
-                  ))}
-                </TextField>
-                <TextField
-                  select
-                  fullWidth
-                  label="Detection checkpoint"
-                  value={detCheckpointType}
-                  onChange={(e) =>
-                    setDetCheckpointType((e.target.value as "best" | "latest") || "best")
-                  }
-                >
-                  <MenuItem value="best">Best</MenuItem>
-                  <MenuItem value="latest">Latest</MenuItem>
-                </TextField>
-              </>
-            )}
-            <TextField
-              label="Tolerance ratio (rect merge)"
-              type="number"
-              inputProps={{ step: 0.05, min: 0, max: 1 }}
-              value={detectTolerance}
-              onChange={(e) => {
-                const val = parseFloat(e.target.value);
-                if (Number.isFinite(val)) {
-                  setDetectTolerance(val);
-                }
-              }}
-              helperText="Higher tolerance turns near-rect polygons into rectangles."
-            />
-            <TextField
-              select
-              fullWidth
-              label="Recognize model"
-              value={recognizeModel}
-              onChange={(e) => setRecognizeModel(e.target.value)}
-            >
-              {RECOGNIZE_MODELS.map((model) => (
-                <MenuItem key={model} value={model}>
-                  {model}
-                </MenuItem>
-              ))}
-            </TextField>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={useTrainedRec}
-                  onChange={(e) => setUseTrainedRec(e.target.checked)}
-                  disabled={!projectId}
-                />
-              }
-              label="Use trained recognition model for this project"
-            />
-            {useTrainedRec && (
-              <>
-                <TextField
-                  select
-                  fullWidth
-                  label="Recognition run"
-                  value={recRunId}
-                  onChange={(e) => setRecRunId(e.target.value)}
-                  disabled={!projectId || loadingRuns || runsByTarget.rec.length === 0}
-                  helperText={
-                    runsByTarget.rec.length === 0
-                      ? "No completed recognition runs found."
-                      : "Select which run to load (optional)."
-                  }
-                >
-                  {runsByTarget.rec.map((run) => (
-                    <MenuItem key={run.id} value={run.id}>
-                      {formatRunLabel(run)}
-                    </MenuItem>
-                  ))}
-                </TextField>
-                <TextField
-                  select
-                  fullWidth
-                  label="Recognition checkpoint"
-                  value={recCheckpointType}
-                  onChange={(e) =>
-                    setRecCheckpointType((e.target.value as "best" | "latest") || "best")
-                  }
-                >
-                  <MenuItem value="best">Best</MenuItem>
-                  <MenuItem value="latest">Latest</MenuItem>
-                </TextField>
-              </>
-            )}
-            {projectType === "ocr_kie" && (
-              <>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={useTrainedKie}
-                      onChange={(e) => setUseTrainedKie(e.target.checked)}
-                      disabled={!projectId}
-                    />
-                  }
-                  label="Use trained classification model for this project"
-                />
-                {useTrainedKie && (
+                  <Tab label="Pretrained" value="pretrained" />
+                  <Tab label="Finetuned" value="finetuned" />
+                </Tabs>
+                {detSource === "pretrained" ? (
+                  <TextField
+                    select
+                    fullWidth
+                    label="Pretrained detection model"
+                    value={detectModel}
+                    onChange={(e) => setDetectModel(e.target.value)}
+                  >
+                    {DETECT_MODELS.map((model) => (
+                      <MenuItem key={model} value={model}>
+                        {model}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                ) : (
                   <>
                     <TextField
                       select
                       fullWidth
-                      label="Classification run"
-                      value={kieRunId}
-                      onChange={(e) => setKieRunId(e.target.value)}
-                      disabled={!projectId || loadingRuns || runsByTarget.kie.length === 0}
+                      label="Detection run"
+                      value={detRunId}
+                      onChange={(e) => setDetRunId(e.target.value)}
+                      disabled={!projectId || loadingRuns || runsByTarget.det.length === 0}
                       helperText={
-                        runsByTarget.kie.length === 0
-                          ? "No completed classification runs found."
-                          : "Select which run to load (optional)."
+                        runsByTarget.det.length === 0
+                          ? "No completed detection runs found."
+                          : "Leave empty to use the latest run."
                       }
                     >
-                      {runsByTarget.kie.map((run) => (
+                      <MenuItem value="">Latest run (default)</MenuItem>
+                      {runsByTarget.det.map((run) => (
                         <MenuItem key={run.id} value={run.id}>
                           {formatRunLabel(run)}
                         </MenuItem>
@@ -438,10 +350,10 @@ const OCRControls: React.FC<OCRControlsProps> = ({
                     <TextField
                       select
                       fullWidth
-                      label="Classification checkpoint"
-                      value={kieCheckpointType}
+                      label="Detection checkpoint"
+                      value={detCheckpointType}
                       onChange={(e) =>
-                        setKieCheckpointType((e.target.value as "best" | "latest") || "best")
+                        setDetCheckpointType((e.target.value as "best" | "latest") || "best")
                       }
                     >
                       <MenuItem value="best">Best</MenuItem>
@@ -450,24 +362,118 @@ const OCRControls: React.FC<OCRControlsProps> = ({
                   </>
                 )}
                 <TextField
+                  label="Tolerance ratio (rect merge)"
+                  type="number"
+                  inputProps={{ step: 0.05, min: 0, max: 1 }}
+                  value={detectTolerance}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (Number.isFinite(val)) {
+                      setDetectTolerance(val);
+                    }
+                  }}
+                  helperText="Higher tolerance turns near-rect polygons into rectangles."
+                />
+              </>
+            )}
+
+            {activeModelTab === "rec" && (
+              <>
+                <Tabs
+                  value={recSource}
+                  onChange={(_, value) => setRecSource(value as ModelSource)}
+                  variant="fullWidth"
+                >
+                  <Tab label="Pretrained" value="pretrained" />
+                  <Tab label="Finetuned" value="finetuned" />
+                </Tabs>
+                {recSource === "pretrained" ? (
+                  <TextField
+                    select
+                    fullWidth
+                    label="Pretrained recognition model"
+                    value={recognizeModel}
+                    onChange={(e) => setRecognizeModel(e.target.value)}
+                  >
+                    {RECOGNIZE_MODELS.map((model) => (
+                      <MenuItem key={model} value={model}>
+                        {model}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                ) : (
+                  <>
+                    <TextField
+                      select
+                      fullWidth
+                      label="Recognition run"
+                      value={recRunId}
+                      onChange={(e) => setRecRunId(e.target.value)}
+                      disabled={!projectId || loadingRuns || runsByTarget.rec.length === 0}
+                      helperText={
+                        runsByTarget.rec.length === 0
+                          ? "No completed recognition runs found."
+                          : "Leave empty to use the latest run."
+                      }
+                    >
+                      <MenuItem value="">Latest run (default)</MenuItem>
+                      {runsByTarget.rec.map((run) => (
+                        <MenuItem key={run.id} value={run.id}>
+                          {formatRunLabel(run)}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                    <TextField
+                      select
+                      fullWidth
+                      label="Recognition checkpoint"
+                      value={recCheckpointType}
+                      onChange={(e) =>
+                        setRecCheckpointType((e.target.value as "best" | "latest") || "best")
+                      }
+                    >
+                      <MenuItem value="best">Best</MenuItem>
+                      <MenuItem value="latest">Latest</MenuItem>
+                    </TextField>
+                  </>
+                )}
+              </>
+            )}
+
+            {activeModelTab === "kie" && projectType === "ocr_kie" && (
+              <>
+                <Typography variant="body2" color="text.secondary">
+                  KIE uses finetuned models only.
+                </Typography>
+                <TextField
                   select
                   fullWidth
-                  label="Classify model"
-                  value={classifyModel}
-                  onChange={(e) => setClassifyModel(e.target.value)}
+                  label="KIE run"
+                  value={kieRunId}
+                  onChange={(e) => setKieRunId(e.target.value)}
+                  disabled={!projectId || loadingRuns || runsByTarget.kie.length === 0}
                   helperText={
-                    classifyModelOptions.length === 0
-                      ? "Select a trained classification run above or keep the default."
-                      : ""
+                    runsByTarget.kie.length === 0
+                      ? "No completed KIE runs found."
+                      : "Leave empty to use the latest run."
                   }
-                  SelectProps={{ displayEmpty: true }}
                 >
-                  <MenuItem value="">Default</MenuItem>
-                  {classifyModelOptions.map((model) => (
-                    <MenuItem key={model} value={model}>
-                      {model}
+                  <MenuItem value="">Latest run (default)</MenuItem>
+                  {runsByTarget.kie.map((run) => (
+                    <MenuItem key={run.id} value={run.id}>
+                      {formatRunLabel(run)}
                     </MenuItem>
                   ))}
+                </TextField>
+                <TextField
+                  select
+                  fullWidth
+                  label="KIE checkpoint"
+                  value={kieCheckpointType}
+                  onChange={(e) => setKieCheckpointType((e.target.value as "best" | "latest") || "best")}
+                >
+                  <MenuItem value="best">Best</MenuItem>
+                  <MenuItem value="latest">Latest</MenuItem>
                 </TextField>
               </>
             )}
