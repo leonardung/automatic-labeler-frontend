@@ -48,6 +48,29 @@ export type SelectedOcrModels = {
   classify: boolean;
 };
 
+export type OcrModelSource = "pretrained" | "finetuned";
+
+export interface OcrModelConfig {
+  det?: {
+    source?: OcrModelSource;
+    model?: string;
+    run_id?: string;
+    checkpoint_type?: "best" | "latest";
+  };
+  rec?: {
+    source?: OcrModelSource;
+    model?: string;
+    run_id?: string;
+    checkpoint_type?: "best" | "latest";
+  };
+  kie?: {
+    source?: OcrModelSource;
+    run_id?: string;
+    checkpoint_type?: "best" | "latest";
+  };
+  tolerance_ratio?: number;
+}
+
 export interface ImageModel {
   id: number;
   image: string;

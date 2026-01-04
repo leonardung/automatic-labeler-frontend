@@ -19,6 +19,7 @@ import TextFieldsIcon from "@mui/icons-material/TextFields";
 import CategoryIcon from "@mui/icons-material/Category";
 import type {
   ImageModel,
+  OcrModelConfig,
   ProjectType,
   SelectedOcrModels,
   TrainingRun,
@@ -37,6 +38,7 @@ interface OCRControlsProps {
   projectId?: number | string | null;
   selectedModels: SelectedOcrModels;
   onToggleModel: (model: keyof SelectedOcrModels) => void;
+  savedConfig?: OcrModelConfig | null;
 }
 
 type ModelSource = "pretrained" | "finetuned";
@@ -52,6 +54,7 @@ const OCRControls: React.FC<OCRControlsProps> = ({
   projectId,
   selectedModels,
   onToggleModel,
+  savedConfig,
 }) => {
   const DETECT_MODELS = ["PP-OCRv5_server_det", "PP-OCRv5_mobile_det", "PP-OCRv4_server_det", "PP-OCRv4_mobile_det"];
   const RECOGNIZE_MODELS = ["PP-OCRv5_server_rec", "PP-OCRv5_mobile_rec", "PP-OCRv4_server_rec_doc"];
@@ -82,6 +85,45 @@ const OCRControls: React.FC<OCRControlsProps> = ({
       setActiveModelTab("det");
     }
   }, [activeModelTab, projectType]);
+
+  useEffect(() => {
+    if (!savedConfig) return;
+    if (savedConfig.det?.model) {
+      setDetectModel(savedConfig.det.model);
+    }
+    if (savedConfig.det?.source) {
+      setDetSource(savedConfig.det.source as ModelSource);
+    }
+    if (savedConfig.det?.run_id !== undefined) {
+      setDetRunId(savedConfig.det.run_id || "");
+    }
+    if (savedConfig.det?.checkpoint_type) {
+      setDetCheckpointType(savedConfig.det.checkpoint_type);
+    }
+    if (typeof savedConfig.tolerance_ratio === "number") {
+      setDetectTolerance(savedConfig.tolerance_ratio);
+    }
+    if (savedConfig.rec?.model) {
+      setRecognizeModel(savedConfig.rec.model);
+    }
+    if (savedConfig.rec?.source) {
+      setRecSource(savedConfig.rec.source as ModelSource);
+    }
+    if (savedConfig.rec?.run_id !== undefined) {
+      setRecRunId(savedConfig.rec.run_id || "");
+    }
+    if (savedConfig.rec?.checkpoint_type) {
+      setRecCheckpointType(savedConfig.rec.checkpoint_type);
+    }
+    if (projectType === "ocr_kie") {
+      if (savedConfig.kie?.run_id !== undefined) {
+        setKieRunId(savedConfig.kie.run_id || "");
+      }
+      if (savedConfig.kie?.checkpoint_type) {
+        setKieCheckpointType(savedConfig.kie.checkpoint_type);
+      }
+    }
+  }, [projectType, savedConfig]);
 
   const loadRuns = async () => {
     if (!projectId) return;
@@ -187,10 +229,35 @@ const OCRControls: React.FC<OCRControlsProps> = ({
         }
       }
 
+      const modelConfig: OcrModelConfig = {
+        det: {
+          source: detSource,
+          model: detectModel,
+          run_id: detRunId || undefined,
+          checkpoint_type: detCheckpointType,
+        },
+        rec: {
+          source: recSource,
+          model: recognizeModel,
+          run_id: recRunId || undefined,
+          checkpoint_type: recCheckpointType,
+        },
+        tolerance_ratio: detectTolerance,
+      };
+      if (projectType === "ocr_kie") {
+        modelConfig.kie = {
+          source: "finetuned",
+          run_id: kieRunId || undefined,
+          checkpoint_type: kieCheckpointType,
+        };
+      }
+
       await axiosInstance.post(`${endpointBase}/configure_models/`, {
+        project_id: projectId,
         detect_model: nextDetectModel,
         recognize_model: nextRecognizeModel,
         ...(nextClassifyModel ? { classify_model: nextClassifyModel } : {}),
+        model_config: modelConfig,
       });
       setConfigOpen(false);
     } catch (error) {

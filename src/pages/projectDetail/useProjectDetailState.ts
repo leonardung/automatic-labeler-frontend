@@ -4,6 +4,7 @@ import { AuthContext } from "../../AuthContext";
 import type {
   ImageModel,
   MaskCategory,
+  OcrModelConfig,
   Project,
   ProjectSnapshot,
   ProjectType,
@@ -102,6 +103,7 @@ export const useProjectDetailState = () => {
     recognize: true,
     classify: true,
   });
+  const [ocrModelConfig, setOcrModelConfig] = useState<OcrModelConfig | null>(null);
 
   return {
     projectId,
@@ -196,6 +198,8 @@ export const useProjectDetailState = () => {
     setOcrViewportControls,
     selectedOcrModels,
     setSelectedOcrModels,
+    ocrModelConfig,
+    setOcrModelConfig,
   };
 };
 

@@ -18,7 +18,7 @@ import OCRControls from "../../components/OCRControls";
 import OCRTextList from "../../components/OCRTextList";
 import OcrCategoryPanel from "../../components/OcrCategoryPanel";
 import ViewportControls from "./ViewportControls";
-import type { ImageModel, MaskCategory, ProjectType, SelectedOcrModels } from "../../types";
+import type { ImageModel, MaskCategory, OcrModelConfig, ProjectType, SelectedOcrModels } from "../../types";
 import type { OCRTool, ViewportControls as ViewportControlsType } from "./types";
 
 interface OcrWorkspaceProps {
@@ -43,6 +43,7 @@ interface OcrWorkspaceProps {
   canRedo: boolean;
   isApplyingHistory: boolean;
   selectedOcrModels: SelectedOcrModels;
+  ocrModelConfig: OcrModelConfig | null;
   onToggleOcrModel: (model: keyof SelectedOcrModels) => void;
   onSelectCategory: (categoryId: number) => void;
   onAddCategory: (name: string, color: string) => void;
@@ -92,6 +93,7 @@ const OcrWorkspace = ({
   canRedo,
   isApplyingHistory,
   selectedOcrModels,
+  ocrModelConfig,
   onToggleOcrModel,
   onSelectCategory,
   onAddCategory,
@@ -152,6 +154,7 @@ const OcrWorkspace = ({
               onStartBlocking={onStartBlocking}
               onStopBlocking={onStopBlocking}
               selectedModels={selectedOcrModels}
+              savedConfig={ocrModelConfig}
               onToggleModel={onToggleOcrModel}
               disabled={isBlocked}
             />

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import axiosInstance from "../../axiosInstance";
+import type { OcrModelConfig, TrainingModelKey } from "../../types";
 import type { ProjectDetailActions } from "./useProjectDetailActions";
 import type { ProjectDetailState } from "./useProjectDetailState";
 
@@ -26,6 +27,7 @@ export const useProjectDetailEffects = (
     setOcrHistory,
     setImages,
     setNotification,
+    setOcrModelConfig,
   } = state;
 
   const {
@@ -132,9 +134,82 @@ export const useProjectDetailEffects = (
     const loadOcrModels = async () => {
       try {
         startBlocking("Loading OCR models...");
-        await axiosInstance.post(`ocr-images/configure_models/`, {
-          detect_model: "PP-OCRv5_mobile_det",
-          recognize_model: "PP-OCRv5_server_rec",
+        const defaultDetModel = "PP-OCRv5_mobile_det";
+        const defaultRecModel = "PP-OCRv5_server_rec";
+        let savedConfig: OcrModelConfig | null = null;
+
+        if (projectId) {
+          try {
+            const configResponse = await axiosInstance.get("ocr-images/model_config/", {
+              params: { project_id: projectId },
+            });
+            const payload = configResponse.data?.config;
+            savedConfig = payload && typeof payload === "object" ? payload : null;
+            setOcrModelConfig(savedConfig);
+          } catch (error) {
+            setOcrModelConfig(null);
+            console.error("Failed to load saved OCR model config:", error);
+          }
+        }
+
+        let detectModel = savedConfig?.det?.model || defaultDetModel;
+        let recognizeModel = savedConfig?.rec?.model || defaultRecModel;
+        let classifyModel: string | undefined;
+
+        const targets: TrainingModelKey[] = [];
+        const runsPayload: Record<string, string> = {};
+        const checkpointPayload: Record<string, string> = {};
+
+        if (savedConfig?.det?.source === "finetuned") {
+          targets.push("det");
+          if (savedConfig.det?.run_id) {
+            runsPayload.det = savedConfig.det.run_id;
+          }
+          checkpointPayload.det = savedConfig.det?.checkpoint_type || "best";
+        }
+        if (savedConfig?.rec?.source === "finetuned") {
+          targets.push("rec");
+          if (savedConfig.rec?.run_id) {
+            runsPayload.rec = savedConfig.rec.run_id;
+          }
+          checkpointPayload.rec = savedConfig.rec?.checkpoint_type || "best";
+        }
+        if (projectType === "ocr_kie" && savedConfig?.kie) {
+          targets.push("kie");
+          if (savedConfig.kie?.run_id) {
+            runsPayload.kie = savedConfig.kie.run_id;
+          }
+          checkpointPayload.kie = savedConfig.kie?.checkpoint_type || "best";
+        }
+
+        if (projectId && targets.length > 0) {
+          try {
+            const trainedResponse = await axiosInstance.post("ocr-images/configure_trained_models/", {
+              project_id: projectId,
+              models: targets,
+              runs: runsPayload,
+              checkpoint_type: checkpointPayload,
+            });
+            const loaded = trainedResponse.data?.loaded || {};
+            if (loaded.det?.model_key) {
+              detectModel = loaded.det.model_key;
+            }
+            if (loaded.rec?.model_key) {
+              recognizeModel = loaded.rec.model_key;
+            }
+            if (loaded.kie?.model_key) {
+              classifyModel = loaded.kie.model_key;
+            }
+          } catch (error) {
+            console.error("Failed to load finetuned OCR models:", error);
+          }
+        }
+
+        await axiosInstance.post("ocr-images/configure_models/", {
+          project_id: projectId,
+          detect_model: detectModel,
+          recognize_model: recognizeModel,
+          ...(classifyModel ? { classify_model: classifyModel } : {}),
         });
         ocrModelLoadedRef.current = true;
       } catch (error) {
@@ -145,7 +220,16 @@ export const useProjectDetailEffects = (
     };
 
     loadOcrModels();
-  }, [isOCRProject, ocrModelLoadedRef, project, startBlocking, stopBlocking]);
+  }, [
+    isOCRProject,
+    ocrModelLoadedRef,
+    project,
+    projectId,
+    projectType,
+    setOcrModelConfig,
+    startBlocking,
+    stopBlocking,
+  ]);
 
   useEffect(() => {
     setImages((prev) =>

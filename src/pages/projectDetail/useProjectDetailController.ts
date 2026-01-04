@@ -68,6 +68,7 @@ export const useProjectDetailController = () => {
     canRedo: state.canRedo,
     isApplyingHistory: state.isApplyingHistory,
     selectedOcrModels: state.selectedOcrModels,
+    ocrModelConfig: state.ocrModelConfig,
     onToggleOcrModel: actions.toggleOcrModel,
     onSelectCategory: actions.handleSelectCategory,
     onAddCategory: actions.handleAddCategory,
