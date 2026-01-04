@@ -130,7 +130,7 @@ const ThumbnailGrid: React.FC<ThumbnailGridProps> = ({
         }}
       >
         {images.map((image, index) => {
-          const hasLabel = !!(image.masks && image.masks.length > 0);
+          const isValidated = Boolean(image.is_label);
           return (
             <Box
               key={image.id}
@@ -169,23 +169,22 @@ const ThumbnailGrid: React.FC<ThumbnailGridProps> = ({
                     width: "100%",
                     height: "100%",
                     objectFit: "cover",
-                    opacity: hasLabel ? 1 : 0.85,
+                    opacity: 1,
                   }}
                 />
-                {!hasLabel && (
+                {isValidated && (
                   <Box
                     position="absolute"
-                    top={0}
-                    left={0}
-                    width="100%"
-                    height="100%"
-                    display="flex"
-                    justifyContent="center"
-                    alignItems="center"
-                    bgcolor="rgba(0,0,0,0.4)"
+                    top={6}
+                    right={6}
+                    px={0.75}
+                    py={0.25}
+                    borderRadius={1}
+                    bgcolor="rgba(46, 160, 90, 0.85)"
+                    border="1px solid rgba(255,255,255,0.2)"
                   >
-                    <Typography variant="overline" color="white">
-                      No labels
+                    <Typography variant="caption" color="white" fontWeight={600}>
+                      Validated
                     </Typography>
                   </Box>
                 )}

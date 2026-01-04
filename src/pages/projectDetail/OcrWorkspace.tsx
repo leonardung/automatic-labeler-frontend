@@ -67,6 +67,7 @@ interface OcrWorkspaceProps {
   onClearLabels: () => void;
   viewportControls: ViewportControlsType | null;
   onRegisterViewportControls: (controls: ViewportControlsType | null) => void;
+  onSetValidation: (nextValidated: boolean) => void;
 }
 
 const OcrWorkspace = ({
@@ -115,221 +116,236 @@ const OcrWorkspace = ({
   onClearLabels,
   viewportControls,
   onRegisterViewportControls,
-}: OcrWorkspaceProps) => (
-  <Box display="flex" flexDirection="column" flexGrow={1} height="100%" overflow="hidden">
-    <Box display="flex" flexGrow={1} overflow="hidden">
-      <Box
-        sx={{
-          flexShrink: 0,
-          width: 380,
-          minWidth: 300,
-          maxWidth: "50vw",
-          resize: "horizontal",
-          overflow: "auto",
-          display: "flex",
-          flexDirection: "column",
-          gap: 1.5,
-          height: "100%",
-          p: 2,
-          backgroundColor: "#0f1624",
-          borderRight: "1px solid #1f2a3d",
-          boxShadow: "inset -1px 0 0 rgba(255,255,255,0.04)",
-        }}
-      >
-        {currentImage && (
-          <OCRControls
-            image={currentImage}
-            projectType={projectType}
-            projectId={projectId}
-            endpointBase={imageEndpointBase}
-            onImageUpdated={onImageUpdated}
-            onStartBlocking={onStartBlocking}
-            onStopBlocking={onStopBlocking}
-            selectedModels={selectedOcrModels}
-            onToggleModel={onToggleOcrModel}
-            disabled={isBlocked}
-          />
-        )}
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
-          <Button
-            variant="contained"
-            color="secondary"
-            onClick={onRunInference}
-            disabled={isBlocked || !currentImage}
-            fullWidth
-          >
-            Run Inference
-          </Button>
-          <Button
-            variant="outlined"
-            color="secondary"
-            onClick={onRunInferenceAll}
-            disabled={isBlocked || isBulkOcrRunning || images.length === 0}
-            fullWidth
-          >
-            Run Inference On All Pages
-          </Button>
-        </Box>
-        {showOcrCategoryPanel && (
-          <Box
-            sx={{
-              minHeight: 100,
-              maxHeight: maxOcrCategoryHeight,
-              height: maxOcrCategoryHeight,
-              resize: "vertical",
-              overflow: "auto",
-              flexShrink: 0,
-            }}
-          >
-            <OcrCategoryPanel
-              ref={ocrCategoryPanelRef}
-              categories={categories}
-              activeCategoryId={activeCategoryId}
-              onSelectCategory={onSelectCategory}
-              onAddCategory={onAddCategory}
-              onDeleteCategory={onDeleteCategory}
-              onColorChange={onColorChange}
-              onRenameCategory={onRenameCategory}
-              disabled={isBlocked}
-            />
-          </Box>
-        )}
-        {currentImage && (
-          <Box
-            sx={{
-              minHeight: 240,
-              maxHeight: "70vh",
-              resize: "vertical",
-              overflow: "hidden",
-              flexGrow: 1,
-              flexShrink: 0,
-              "& > *": { height: "100%" },
-            }}
-          >
-            <OCRTextList
-              image={currentImage}
-              categories={categories}
-              selectedShapeIds={selectedShapeIds}
-              onSelectShapes={onSelectShapesFromList}
-              onImageUpdated={onImageUpdated}
-              disabled={isBlocked}
-              endpointBase={imageEndpointBase}
-              showCategories={showOcrCategoryPanel}
-              scrollSignal={selectionScrollSignal}
-            />
-          </Box>
-        )}
-      </Box>
-      <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
+  onSetValidation,
+}: OcrWorkspaceProps) => {
+  const isValidated = Boolean(currentImage?.is_label);
+  const hasUnvalidatedImages = images.some((image) => !image.is_label);
+
+  return (
+    <Box display="flex" flexDirection="column" flexGrow={1} height="100%" overflow="hidden">
+      <Box display="flex" flexGrow={1} overflow="hidden">
         <Box
-          display="flex"
-          alignItems="center"
-          justifyContent="space-between"
-          flexWrap="wrap"
-          gap={1}
-          mb={1}
+          sx={{
+            flexShrink: 0,
+            width: 380,
+            minWidth: 300,
+            maxWidth: "50vw",
+            resize: "horizontal",
+            overflow: "auto",
+            display: "flex",
+            flexDirection: "column",
+            gap: 1.5,
+            height: "100%",
+            p: 2,
+            backgroundColor: "#0f1624",
+            borderRight: "1px solid #1f2a3d",
+            boxShadow: "inset -1px 0 0 rgba(255,255,255,0.04)",
+          }}
         >
-          <ToggleButtonGroup
-            color="primary"
-            value={ocrTool}
-            exclusive
-            size="small"
-            onChange={(_, value: OCRTool | null) => value && onOcrToolChange(value)}
-            sx={{ "& .MuiToggleButton-root": { minWidth: 80 } }}
-          >
-            <ToggleButton value="select">Select (S)</ToggleButton>
-            <ToggleButton value="rect">Rect (R)</ToggleButton>
-            <ToggleButton value="polygon">Polygon (P)</ToggleButton>
-          </ToggleButtonGroup>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-            <Switch
-              size="small"
-              checked={showOcrText}
-              onChange={(e) => onToggleShowOcrText(e.target.checked)}
+          {currentImage && (
+            <OCRControls
+              image={currentImage}
+              projectType={projectType}
+              projectId={projectId}
+              endpointBase={imageEndpointBase}
+              onImageUpdated={onImageUpdated}
+              onStartBlocking={onStartBlocking}
+              onStopBlocking={onStopBlocking}
+              selectedModels={selectedOcrModels}
+              onToggleModel={onToggleOcrModel}
+              disabled={isBlocked}
             />
-            <Typography variant="body2" color="textSecondary">
-              Show Recognized Text
-            </Typography>
+          )}
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            <Button
+              variant={isValidated ? "outlined" : "contained"}
+              color="success"
+              onClick={() => onSetValidation(!isValidated)}
+              disabled={isBlocked || !currentImage}
+              fullWidth
+            >
+              {isValidated ? "Unvalidate Page" : "Validate Page"}
+            </Button>
+            <Button
+              variant="contained"
+              color="secondary"
+              onClick={onRunInference}
+              disabled={isBlocked || !currentImage || isValidated}
+              fullWidth
+            >
+              Run Inference
+            </Button>
+            <Button
+              variant="outlined"
+              color="secondary"
+              onClick={onRunInferenceAll}
+              disabled={isBlocked || isBulkOcrRunning || images.length === 0 || !hasUnvalidatedImages}
+              fullWidth
+            >
+              Run Inference On All Pages
+            </Button>
           </Box>
-          <ViewportControls controls={viewportControls} disabled={isBlocked} />
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            <Tooltip title="Undo (Ctrl+Z)">
-              <span>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<UndoIcon />}
-                  onClick={onUndo}
-                  disabled={!canUndo || isBlocked || isApplyingHistory}
-                >
-                  Undo
-                </Button>
-              </span>
-            </Tooltip>
-            <Tooltip title="Redo (Ctrl+Y / Ctrl+Shift+Z)">
-              <span>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<RedoIcon />}
-                  onClick={onRedo}
-                  disabled={!canRedo || isBlocked || isApplyingHistory}
-                >
-                  Redo
-                </Button>
-              </span>
-            </Tooltip>
-          </Box>
-        </Box>
-        <Box display="flex" flexGrow={1} overflow="hidden">
-          <Box flexGrow={1} display="flex" overflow="hidden">
-            {currentImage && (
-              <ImageDisplayOCR
+          {showOcrCategoryPanel && (
+            <Box
+              sx={{
+                minHeight: 100,
+                maxHeight: maxOcrCategoryHeight,
+                height: maxOcrCategoryHeight,
+                resize: "vertical",
+                overflow: "auto",
+                flexShrink: 0,
+              }}
+            >
+              <OcrCategoryPanel
+                ref={ocrCategoryPanelRef}
+                categories={categories}
+                activeCategoryId={activeCategoryId}
+                onSelectCategory={onSelectCategory}
+                onAddCategory={onAddCategory}
+                onDeleteCategory={onDeleteCategory}
+                onColorChange={onColorChange}
+                onRenameCategory={onRenameCategory}
+                disabled={isBlocked}
+              />
+            </Box>
+          )}
+          {currentImage && (
+            <Box
+              sx={{
+                minHeight: 240,
+                maxHeight: "70vh",
+                resize: "vertical",
+                overflow: "hidden",
+                flexGrow: 1,
+                flexShrink: 0,
+                "& > *": { height: "100%" },
+              }}
+            >
+              <OCRTextList
                 image={currentImage}
-                activeTool={ocrTool}
                 categories={categories}
                 selectedShapeIds={selectedShapeIds}
-                onSelectShapes={onSelectShapesFromImage}
+                onSelectShapes={onSelectShapesFromList}
                 onImageUpdated={onImageUpdated}
                 disabled={isBlocked}
-                onStartBlocking={onStartBlocking}
-                onStopBlocking={onStopBlocking}
                 endpointBase={imageEndpointBase}
-                showTextLabels={showOcrText}
-                onRegisterViewportControls={onRegisterViewportControls}
+                showCategories={showOcrCategoryPanel}
+                scrollSignal={selectionScrollSignal}
               />
-            )}
-          </Box>
+            </Box>
+          )}
+        </Box>
+        <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
           <Box
-            width={80}
             display="flex"
-            flexDirection="column"
-            justifyContent="center"
-            alignItems="flex-start"
+            alignItems="center"
+            justifyContent="space-between"
+            flexWrap="wrap"
+            gap={1}
+            mb={1}
           >
-            <NavigationButtons
-              onPrev={onPrevImage}
-              onNext={onNextImage}
-              disablePrev={currentIndex === 0}
-              disableNext={currentIndex === images.length - 1}
-              disabled={isBlocked}
-            />
-            <Controls
-              projectType={projectType}
-              onPropagate={onPropagateMask}
-              onClearLabels={onClearLabels}
-              disabled={isBlocked}
-            />
+            <ToggleButtonGroup
+              color="primary"
+              value={ocrTool}
+              exclusive
+              size="small"
+              onChange={(_, value: OCRTool | null) => value && onOcrToolChange(value)}
+              sx={{ "& .MuiToggleButton-root": { minWidth: 80 } }}
+            >
+              <ToggleButton value="select">Select (S)</ToggleButton>
+              <ToggleButton value="rect">Rect (R)</ToggleButton>
+              <ToggleButton value="polygon">Polygon (P)</ToggleButton>
+            </ToggleButtonGroup>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+              <Switch
+                size="small"
+                checked={showOcrText}
+                onChange={(e) => onToggleShowOcrText(e.target.checked)}
+              />
+              <Typography variant="body2" color="textSecondary">
+                Show Recognized Text
+              </Typography>
+            </Box>
+            <ViewportControls controls={viewportControls} disabled={isBlocked} />
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <Tooltip title="Undo (Ctrl+Z)">
+                <span>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<UndoIcon />}
+                    onClick={onUndo}
+                    disabled={!canUndo || isBlocked || isApplyingHistory}
+                  >
+                    Undo
+                  </Button>
+                </span>
+              </Tooltip>
+              <Tooltip title="Redo (Ctrl+Y / Ctrl+Shift+Z)">
+                <span>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<RedoIcon />}
+                    onClick={onRedo}
+                    disabled={!canRedo || isBlocked || isApplyingHistory}
+                  >
+                    Redo
+                  </Button>
+                </span>
+              </Tooltip>
+            </Box>
+          </Box>
+          <Box display="flex" flexGrow={1} overflow="hidden">
+            <Box flexGrow={1} display="flex" overflow="hidden">
+              {currentImage && (
+                <ImageDisplayOCR
+                  image={currentImage}
+                  activeTool={ocrTool}
+                  categories={categories}
+                  selectedShapeIds={selectedShapeIds}
+                  onSelectShapes={onSelectShapesFromImage}
+                  onImageUpdated={onImageUpdated}
+                  disabled={isBlocked}
+                  onStartBlocking={onStartBlocking}
+                  onStopBlocking={onStopBlocking}
+                  endpointBase={imageEndpointBase}
+                  showTextLabels={showOcrText}
+                  onRegisterViewportControls={onRegisterViewportControls}
+                />
+              )}
+            </Box>
+            <Box
+              width={80}
+              display="flex"
+              flexDirection="column"
+              justifyContent="center"
+              alignItems="flex-start"
+            >
+              <NavigationButtons
+                onPrev={onPrevImage}
+                onNext={onNextImage}
+                disablePrev={currentIndex === 0}
+                disableNext={currentIndex === images.length - 1}
+                disabled={isBlocked}
+              />
+              <Controls
+                projectType={projectType}
+                onPropagate={onPropagateMask}
+                onClearLabels={onClearLabels}
+                disabled={isBlocked}
+              />
+            </Box>
           </Box>
         </Box>
       </Box>
+      <ThumbnailGrid
+        images={images}
+        onThumbnailClick={onThumbnailClick}
+        currentIndex={currentIndex}
+      />
     </Box>
-    <ThumbnailGrid
-      images={images}
-      onThumbnailClick={onThumbnailClick}
-      currentIndex={currentIndex}
-    />
-  </Box>
-);
+  );
+};
 
 export default OcrWorkspace;

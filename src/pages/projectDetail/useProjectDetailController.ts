@@ -92,6 +92,7 @@ export const useProjectDetailController = () => {
     onClearLabels: actions.handleClearLabels,
     viewportControls: state.ocrViewportControls,
     onRegisterViewportControls: actions.registerOcrViewportControls,
+    onSetValidation: actions.handleSetValidation,
   };
 
   const segmentationWorkspaceProps = {

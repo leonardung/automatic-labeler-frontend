@@ -260,6 +260,14 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
     if (isBlocked) return;
     const image = images[currentIndex];
     if (!image || !image.id) return;
+    if (image.is_label) {
+      setNotification({
+        open: true,
+        message: "This page is validated. Unvalidate it to run inference.",
+        severity: "info",
+      });
+      return;
+    }
     const selected = (image.ocr_annotations || []).filter((shape) =>
       selectedShapeIds.includes(shape.id)
     );
@@ -292,6 +300,7 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
     images,
     isBlocked,
     selectedShapeIds,
+    setNotification,
     startBlocking,
     stopBlocking,
   ]);
@@ -341,10 +350,58 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
     [categories, imageEndpointBase, projectType]
   );
 
+  const handleSetValidation = useCallback(
+    async (nextValidated: boolean) => {
+      if (isBlocked) return;
+      const image = currentImage;
+      if (!image || !image.id) return;
+
+      try {
+        startBlocking(nextValidated ? "Marking page as validated..." : "Removing validation...");
+        const response = await axiosInstance.patch<ImageModel>(
+          `${imageEndpointBase}/${image.id}/`,
+          { is_label: nextValidated }
+        );
+        handleImageUpdated(response.data || { ...image, is_label: nextValidated });
+        setNotification({
+          open: true,
+          message: nextValidated ? "Page marked as validated." : "Page marked as unvalidated.",
+          severity: "success",
+        });
+      } catch (error) {
+        console.error("Error updating validation state:", error);
+        setNotification({
+          open: true,
+          message: "Failed to update validation state.",
+          severity: "error",
+        });
+      } finally {
+        stopBlocking();
+      }
+    },
+    [
+      currentImage,
+      handleImageUpdated,
+      imageEndpointBase,
+      isBlocked,
+      setNotification,
+      startBlocking,
+      stopBlocking,
+    ]
+  );
+
   const handleFullInference = useCallback(async () => {
     if (isBlocked) return;
     const image = images[currentIndex];
     if (!image || !image.id) return;
+    if (image.is_label) {
+      setNotification({
+        open: true,
+        message: "This page is validated. Unvalidate it to run inference.",
+        severity: "info",
+      });
+      return;
+    }
     if (!hasSelectedOcrModel()) {
       setNotification({
         open: true,
@@ -383,8 +440,15 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
 
   const handleBulkDetectRecognize = useCallback(async () => {
     if (isBlocked) return;
-    const targets = images.filter((img) => img.id);
-    if (!targets.length) return;
+    const targets = images.filter((img) => img.id && !img.is_label);
+    if (!targets.length) {
+      setNotification({
+        open: true,
+        message: "All pages are validated. Unvalidate pages to run inference.",
+        severity: "info",
+      });
+      return;
+    }
     if (!hasSelectedOcrModel()) {
       setNotification({
         open: true,
@@ -408,7 +472,7 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
       )
     );
 
-    startBlocking("Running inference on all pages...");
+    startBlocking("Running inference on unvalidated pages...");
 
     try {
       for (const img of targets) {
@@ -474,6 +538,7 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
     handleRedo,
     handleRecognizeSelected,
     runFullInferenceForImage,
+    handleSetValidation,
     handleFullInference,
     handleBulkDetectRecognize,
     handleOcrToolChange,
