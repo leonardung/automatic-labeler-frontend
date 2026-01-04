@@ -295,22 +295,20 @@ function ModelTrainingPage() {
       const fetched: TrainingJob[] = response.data.jobs || [];
       setJobs(fetched);
       const currentSelectedId = selectedJobIdRef.current;
-      if ((selectLatest || !currentSelectedId) && fetched.length > 0) {
-        const nextForModel = fetched.find((job) => job.targets.includes(activeModel)) || fetched[0];
-        if (nextForModel) {
-          setSelectedJobId(nextForModel.id);
-          setSelectedJob((prev) =>
-            prev ? { ...nextForModel, logs: prev.logs } : { ...nextForModel, logs: undefined }
-          );
-        }
+      const latestForModel = fetched.find((job) => job.targets.includes(activeModel)) || fetched[0] || null;
+      const currentMatch = currentSelectedId ? fetched.find((job) => job.id === currentSelectedId) : null;
+      const nextSelectedId =
+        (selectLatest || !currentSelectedId || !currentMatch) && latestForModel ? latestForModel.id : currentSelectedId;
+      const nextSelectedJob = nextSelectedId ? fetched.find((job) => job.id === nextSelectedId) : null;
+
+      if (nextSelectedId && nextSelectedId !== currentSelectedId) {
+        setSelectedJobId(nextSelectedId);
       }
-      if (currentSelectedId) {
-        const match = fetched.find((job) => job.id === currentSelectedId);
-        if (match) {
-          setSelectedJob((prev) =>
-            prev ? { ...match, logs: prev.logs } : { ...match, logs: undefined }
-          );
-        }
+      if (nextSelectedJob) {
+        setSelectedJob((prev) => {
+          const logs = prev && prev.id === nextSelectedJob.id ? prev.logs : nextSelectedJob.logs;
+          return { ...nextSelectedJob, logs };
+        });
       }
       const active = hasActiveJobs(fetched);
       if (managePolling && !active) {
@@ -467,7 +465,7 @@ function ModelTrainingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!selectedJobId) return;
-    if (!selectedJob || selectedJob.logs === undefined) {
+    if (!selectedJob || selectedJob.logs == null) {
       startJobDetailPolling(selectedJobId);
     }
   }, [selectedJob, selectedJobId]);
@@ -495,7 +493,7 @@ function ModelTrainingPage() {
     if (!selectedJob || selectedJob.id !== targetJob.id) {
       setSelectedJob(targetJob);
     }
-    if (!selectedJob || selectedJob.id !== targetJob.id || selectedJob.logs === undefined) {
+    if (!selectedJob || selectedJob.id !== targetJob.id || selectedJob.logs == null) {
       startJobDetailPolling(targetJob.id);
     }
   }, [panelTabs, activeModel, jobs, selectedJob, selectedJobId]);
@@ -718,11 +716,19 @@ function ModelTrainingPage() {
       const job = response.data.job;
       setSelectedJob(job);
       setSelectedJobId(job.id);
+      selectedJobIdRef.current = job.id;
+      setJobs((prev) => {
+        const existing = prev.find((item) => item.id === job.id);
+        if (existing) {
+          return prev.map((item) => (item.id === job.id ? { ...item, ...job } : item));
+        }
+        return [job, ...prev];
+      });
       setAutoScroll(true);
       setActiveModel(job.targets[0] || "det");
       setPanelTabs((prev) => ({ ...prev, [job.targets[0] || "det"]: "runs" }));
       notify("Training queued.", "success");
-      startJobsPolling(true);
+      startJobsPolling();
       startJobDetailPolling(job.id);
       await loadDatasetSummary();
     } catch (error) {
@@ -1037,6 +1043,7 @@ function ModelTrainingPage() {
     );
   }, [currentJob]);
   const formatTime = (value?: string | null) => (value ? new Date(value).toLocaleString() : "Not started");
+  const formatSavedRunId = (run: TrainingRun) => (run.job_id || run.id).slice(0, 8);
 
   const busy = loadingDefaults || saving;
   const runsBusy = loadingJobs || loadingJobDetail;
@@ -1580,7 +1587,7 @@ function ModelTrainingPage() {
                               >
                                 <Box display="flex" alignItems="center" justifyContent="space-between">
                                   <Typography variant="subtitle1" fontWeight={700}>
-                                    Run {run.id.slice(0, 8)}
+                                    Run {formatSavedRunId(run)}
                                   </Typography>
                                   <Chip
                                     label={(run.status || "unknown").toUpperCase()}
@@ -1629,7 +1636,7 @@ function ModelTrainingPage() {
                             <Box display="flex" alignItems="center" justifyContent="space-between">
                               <Box>
                                 <Typography variant="subtitle1" fontWeight={700}>
-                                  Run {selectedRunModel.id.slice(0, 8)} metrics
+                                  Run {formatSavedRunId(selectedRunModel)} metrics
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
                                   Steps tracked: {selectedRunModel.metrics_log?.length ?? 0}
