@@ -189,20 +189,34 @@ const OCRControls: React.FC<OCRControlsProps> = ({
   };
 
   const handleResetConfig = () => {
-    setDetSource("pretrained");
-    setRecSource("pretrained");
-    setDetectModel(DEFAULT_DETECT_MODEL);
-    setRecognizeModel(DEFAULT_RECOGNIZE_MODEL);
-    setDetectTolerance(DEFAULT_DETECT_TOLERANCE);
-    setDetectThresh(DEFAULT_DETECT_THRESH);
-    setDetectBoxThresh(DEFAULT_DETECT_BOX_THRESH);
-    setDetectUnclipRatio(DEFAULT_DETECT_UNCLIP_RATIO);
-    setDetRunId("");
-    setRecRunId("");
-    setKieRunId("");
-    setDetCheckpointType(DEFAULT_CHECKPOINT_TYPE);
-    setRecCheckpointType(DEFAULT_CHECKPOINT_TYPE);
-    setKieCheckpointType(DEFAULT_CHECKPOINT_TYPE);
+    if (activeModelTab === "det") {
+      setDetectTolerance(DEFAULT_DETECT_TOLERANCE);
+      setDetectThresh(DEFAULT_DETECT_THRESH);
+      setDetectBoxThresh(DEFAULT_DETECT_BOX_THRESH);
+      setDetectUnclipRatio(DEFAULT_DETECT_UNCLIP_RATIO);
+      if (detSource === "pretrained") {
+        setDetectModel(DEFAULT_DETECT_MODEL);
+      } else {
+        setDetRunId("");
+        setDetCheckpointType(DEFAULT_CHECKPOINT_TYPE);
+      }
+      return;
+    }
+
+    if (activeModelTab === "rec") {
+      if (recSource === "pretrained") {
+        setRecognizeModel(DEFAULT_RECOGNIZE_MODEL);
+      } else {
+        setRecRunId("");
+        setRecCheckpointType(DEFAULT_CHECKPOINT_TYPE);
+      }
+      return;
+    }
+
+    if (activeModelTab === "kie") {
+      setKieRunId("");
+      setKieCheckpointType(DEFAULT_CHECKPOINT_TYPE);
+    }
   };
 
   const handleSaveConfig = async () => {
