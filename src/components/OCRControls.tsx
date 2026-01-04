@@ -65,6 +65,9 @@ const OCRControls: React.FC<OCRControlsProps> = ({
   const [recSource, setRecSource] = useState<ModelSource>("pretrained");
   const [detectModel, setDetectModel] = useState(DETECT_MODELS[0]);
   const [detectTolerance, setDetectTolerance] = useState<number>(0.2);
+  const [detectThresh, setDetectThresh] = useState<number>(0.3);
+  const [detectBoxThresh, setDetectBoxThresh] = useState<number>(0.6);
+  const [detectUnclipRatio, setDetectUnclipRatio] = useState<number>(1.5);
   const [recognizeModel, setRecognizeModel] = useState(RECOGNIZE_MODELS[0]);
   const [savingConfig, setSavingConfig] = useState(false);
   const [detRunId, setDetRunId] = useState<string>("");
@@ -99,6 +102,15 @@ const OCRControls: React.FC<OCRControlsProps> = ({
     }
     if (savedConfig.det?.checkpoint_type) {
       setDetCheckpointType(savedConfig.det.checkpoint_type);
+    }
+    if (typeof savedConfig.det?.thresh === "number") {
+      setDetectThresh(savedConfig.det.thresh);
+    }
+    if (typeof savedConfig.det?.box_thresh === "number") {
+      setDetectBoxThresh(savedConfig.det.box_thresh);
+    }
+    if (typeof savedConfig.det?.unclip_ratio === "number") {
+      setDetectUnclipRatio(savedConfig.det.unclip_ratio);
     }
     if (typeof savedConfig.tolerance_ratio === "number") {
       setDetectTolerance(savedConfig.tolerance_ratio);
@@ -235,6 +247,9 @@ const OCRControls: React.FC<OCRControlsProps> = ({
           model: detectModel,
           run_id: detRunId || undefined,
           checkpoint_type: detCheckpointType,
+          thresh: detectThresh,
+          box_thresh: detectBoxThresh,
+          unclip_ratio: detectUnclipRatio,
         },
         rec: {
           source: recSource,
@@ -431,7 +446,46 @@ const OCRControls: React.FC<OCRControlsProps> = ({
                   </>
                 )}
                 <TextField
-                  label="Tolerance ratio (rect merge)"
+                  label="Detection pixel threshold (thresh)"
+                  type="number"
+                  inputProps={{ step: 0.05, min: 0 }}
+                  value={detectThresh}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (Number.isFinite(val)) {
+                      setDetectThresh(val);
+                    }
+                  }}
+                  helperText="Pixels with scores greater than this threshold in the output probability map are considered text pixels."
+                />
+                <TextField
+                  label="Detection box threshold (box_thresh)"
+                  type="number"
+                  inputProps={{ step: 0.05, min: 0 }}
+                  value={detectBoxThresh}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (Number.isFinite(val)) {
+                      setDetectBoxThresh(val);
+                    }
+                  }}
+                  helperText="A detection result is considered a text region if the average score of all pixels within the border of the result is greater than this threshold."
+                />
+                <TextField
+                  label="Unclip ratio"
+                  type="number"
+                  inputProps={{ step: 0.1, min: 0 }}
+                  value={detectUnclipRatio}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (Number.isFinite(val)) {
+                      setDetectUnclipRatio(val);
+                    }
+                  }}
+                  helperText="Expansion coefficient, which expands the text region using this method. The larger the value, the larger the expansion area."
+                />
+                <TextField
+                  label="Tolerance ratio (polygone to rectange)"
                   type="number"
                   inputProps={{ step: 0.05, min: 0, max: 1 }}
                   value={detectTolerance}

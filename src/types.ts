@@ -56,6 +56,9 @@ export interface OcrModelConfig {
     model?: string;
     run_id?: string;
     checkpoint_type?: "best" | "latest";
+    thresh?: number;
+    box_thresh?: number;
+    unclip_ratio?: number;
   };
   rec?: {
     source?: OcrModelSource;
