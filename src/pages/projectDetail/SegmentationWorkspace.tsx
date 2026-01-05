@@ -4,6 +4,7 @@ import ImageDisplaySegmentation from "../../components/ImageDisplaySegmentation"
 import NavigationButtons from "../../components/NavigationButtons";
 import Controls from "../../components/Controls";
 import PagesPanel from "../../components/PagesPanel";
+import ResizablePanel from "../../components/ResizablePanel";
 import MaskCategoryPanel from "../../components/MaskCategoryPanel";
 import TextPromptMaskForm from "../../components/TextPromptMaskForm";
 import ViewportControls from "./ViewportControls";
@@ -75,13 +76,14 @@ const SegmentationWorkspace = ({
 }: SegmentationWorkspaceProps) => (
   <Box display="flex" flexDirection="column" flexGrow={1} height="100%" overflow="hidden">
     <Box display="flex" flexGrow={1} overflow="hidden">
-      <Box
+      <ResizablePanel
+        axis="horizontal"
+        resizeFrom="right"
+        defaultSize={380}
+        minSize={300}
+        maxSize={({ width }) => width * 0.5}
         sx={{
           flexShrink: 0,
-          width: 380,
-          minWidth: 300,
-          maxWidth: "50vw",
-          resize: "horizontal",
           overflow: "hidden",
           display: "flex",
           flexDirection: "column",
@@ -117,7 +119,7 @@ const SegmentationWorkspace = ({
             onColorChange={onColorChange}
           />
         </Box>
-      </Box>
+      </ResizablePanel>
       <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
         <Box display="flex" justifyContent="flex-end" mb={1}>
           <ViewportControls controls={viewportControls} disabled={isBlocked} />

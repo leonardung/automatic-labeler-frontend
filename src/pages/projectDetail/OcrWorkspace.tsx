@@ -14,6 +14,7 @@ import ImageDisplayOCR from "../../components/ImageDisplayOCR";
 import NavigationButtons from "../../components/NavigationButtons";
 import Controls from "../../components/Controls";
 import PagesPanel from "../../components/PagesPanel";
+import ResizablePanel from "../../components/ResizablePanel";
 import OCRControls from "../../components/OCRControls";
 import OCRTextList from "../../components/OCRTextList";
 import OcrCategoryPanel from "../../components/OcrCategoryPanel";
@@ -134,13 +135,14 @@ const OcrWorkspace = ({
   return (
     <Box display="flex" flexDirection="column" flexGrow={1} height="100%" overflow="hidden">
       <Box display="flex" flexGrow={1} overflow="hidden">
-        <Box
+        <ResizablePanel
+          axis="horizontal"
+          resizeFrom="right"
+          defaultSize={380}
+          minSize={300}
+          maxSize={({ width }) => width * 0.5}
           sx={{
             flexShrink: 0,
-            width: 380,
-            minWidth: 300,
-            maxWidth: "50vw",
-            resize: "horizontal",
             overflow: "auto",
             display: "flex",
             flexDirection: "column",
@@ -197,12 +199,13 @@ const OcrWorkspace = ({
             </Button>
           </Box>
           {showOcrCategoryPanel && (
-            <Box
+            <ResizablePanel
+              axis="vertical"
+              resizeFrom="bottom"
+              defaultSize={maxOcrCategoryHeight}
+              minSize={100}
+              maxSize={maxOcrCategoryHeight}
               sx={{
-                minHeight: 100,
-                maxHeight: maxOcrCategoryHeight,
-                height: maxOcrCategoryHeight,
-                resize: "vertical",
                 overflow: "auto",
                 flexShrink: 0,
               }}
@@ -218,14 +221,16 @@ const OcrWorkspace = ({
                 onRenameCategory={onRenameCategory}
                 disabled={isBlocked}
               />
-            </Box>
+            </ResizablePanel>
           )}
           {currentImage && (
-            <Box
+            <ResizablePanel
+              axis="vertical"
+              resizeFrom="bottom"
+              minSize={240}
+              maxSize={({ height }) => height * 0.7}
+              lockFlexOnResize
               sx={{
-                minHeight: 240,
-                maxHeight: "70vh",
-                resize: "vertical",
                 overflow: "hidden",
                 flexGrow: 1,
                 flexShrink: 0,
@@ -243,9 +248,9 @@ const OcrWorkspace = ({
                 showCategories={showOcrCategoryPanel}
                 scrollSignal={selectionScrollSignal}
               />
-            </Box>
+            </ResizablePanel>
           )}
-        </Box>
+        </ResizablePanel>
         <Box flexGrow={1} display="flex" flexDirection="column" overflow="hidden" p={2}>
           <Box
             display="flex"
