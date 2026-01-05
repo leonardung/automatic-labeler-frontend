@@ -10,6 +10,9 @@ import {
 } from "@mui/material";
 import UndoIcon from "@mui/icons-material/Undo";
 import RedoIcon from "@mui/icons-material/Redo";
+import {
+  PlayArrow,
+} from "@mui/icons-material";
 import ImageDisplayOCR from "../../components/ImageDisplayOCR";
 import NavigationButtons from "../../components/NavigationButtons";
 import Controls from "../../components/Controls";
@@ -184,6 +187,7 @@ const OcrWorkspace = ({
             </Button>
             <Button
               variant="contained"
+              startIcon={<PlayArrow />}
               color="secondary"
               onClick={onRunInference}
               disabled={isBlocked || !currentImage || isValidated}
@@ -193,6 +197,7 @@ const OcrWorkspace = ({
             </Button>
             <Button
               variant="outlined"
+              startIcon={<PlayArrow />}
               color="secondary"
               onClick={onRunInferenceAll}
               disabled={isBlocked || isBulkOcrRunning || images.length === 0 || !hasUnvalidatedImages}
