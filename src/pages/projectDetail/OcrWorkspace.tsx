@@ -201,6 +201,7 @@ const OcrWorkspace = ({
           {showOcrCategoryPanel && (
             <ResizablePanel
               axis="vertical"
+              handlePosition="bottom-right"
               resizeFrom="bottom"
               defaultSize={maxOcrCategoryHeight}
               minSize={100}
@@ -227,6 +228,7 @@ const OcrWorkspace = ({
             <ResizablePanel
               axis="vertical"
               resizeFrom="bottom"
+              handlePosition="bottom-right"
               minSize={240}
               maxSize={({ height }) => height * 0.7}
               lockFlexOnResize

@@ -218,19 +218,26 @@ const ResizablePanel: React.FC<ResizablePanelProps> = ({
     return Array.isArray(sx) ? [...sx, baseSx] : [sx, baseSx];
   }, [baseSx, sx]);
 
-  const handleSideStyles =
+  const handlePositionStyles =
     resolvedHandlePosition === "bottom-left"
       ? {
           left: handleOffset,
-          borderLeft: "2px solid currentColor",
-          borderBottomLeftRadius: 2,
           justifyContent: "flex-start",
         }
       : {
           right: handleOffset,
+          justifyContent: "flex-end",
+        };
+
+  const handleGlyphStyles =
+    resolvedHandlePosition === "bottom-left"
+      ? {
+          borderLeft: "2px solid currentColor",
+          borderBottomLeftRadius: 2,
+        }
+      : {
           borderRight: "2px solid currentColor",
           borderBottomRightRadius: 2,
-          justifyContent: "flex-end",
         };
 
   const cursor = axis === "horizontal" ? "col-resize" : "row-resize";
@@ -244,7 +251,6 @@ const ResizablePanel: React.FC<ResizablePanelProps> = ({
         onMouseDown={handleMouseDown}
         sx={{
           position: "absolute",
-          left: handleOffset,
           bottom: handleOffset,
           width: handleSize + 10,
           height: handleSize + 10,
@@ -253,16 +259,15 @@ const ResizablePanel: React.FC<ResizablePanelProps> = ({
           cursor,
           color: "rgba(255,255,255,0.4)",
           "&:hover": { color: "rgba(255,255,255,0.7)" },
-          ...handleSideStyles,
+          ...handlePositionStyles,
         }}
       >
         <Box
           sx={{
             width: handleSize,
             height: handleSize,
-            borderLeft: "2px solid currentColor",
             borderBottom: "2px solid currentColor",
-            borderBottomLeftRadius: 2,
+            ...handleGlyphStyles,
           }}
         />
       </Box>
