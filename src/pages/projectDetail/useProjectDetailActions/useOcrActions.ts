@@ -77,21 +77,32 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
 
   const handleImageUpdated = useCallback(
     (updatedImage: ImageModel) => {
-      const normalized = decorateImage(updatedImage);
-      let previousAnnotations: OCRAnnotation[] | null = null;
+      const hasOcrUpdate = Object.prototype.hasOwnProperty.call(updatedImage, "ocr_annotations");
+      const hasMasksUpdate = Object.prototype.hasOwnProperty.call(updatedImage, "masks");
+      const existingImage = images.find((img) => img.id === updatedImage.id);
+      const mergedImage = existingImage ? { ...existingImage, ...updatedImage } : updatedImage;
+
+      if (!hasOcrUpdate && existingImage?.ocr_annotations) {
+        mergedImage.ocr_annotations = existingImage.ocr_annotations;
+      }
+      if (!hasMasksUpdate && existingImage?.masks) {
+        mergedImage.masks = existingImage.masks;
+      }
+
+      const normalized = decorateImage(mergedImage);
       const nextAnnotations = normalized.ocr_annotations;
+
+      const shouldRecordHistory =
+        isOCRProject &&
+        hasOcrUpdate &&
+        !suppressOcrHistoryRef.current &&
+        Boolean(existingImage);
+      const previousAnnotations = shouldRecordHistory
+        ? cloneOcrAnnotations(existingImage?.ocr_annotations || [])
+        : null;
+
       setImages((prev) =>
-        prev.map((img) => {
-          if (img.id !== normalized.id) return img;
-          if (
-            isOCRProject &&
-            !suppressOcrHistoryRef.current &&
-            typeof nextAnnotations !== "undefined"
-          ) {
-            previousAnnotations = cloneOcrAnnotations(img.ocr_annotations || []);
-          }
-          return { ...img, ...normalized };
-        })
+        prev.map((img) => (img.id === normalized.id ? { ...img, ...normalized } : img))
       );
       setProject((prev) =>
         prev
@@ -104,16 +115,26 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
           : prev
       );
 
-      if (
-        isOCRProject &&
-        !suppressOcrHistoryRef.current &&
-        previousAnnotations !== null &&
-        typeof nextAnnotations !== "undefined"
-      ) {
+      if (isOCRProject && hasOcrUpdate) {
+        setSelectedShapeIds((prev) => {
+          const allowed = new Set((nextAnnotations || []).map((ann) => ann.id));
+          return prev.filter((id) => allowed.has(id));
+        });
+      }
+
+      if (shouldRecordHistory && previousAnnotations !== null) {
         recordOcrHistory(normalized.id, previousAnnotations, nextAnnotations || []);
       }
     },
-    [isOCRProject, recordOcrHistory, setImages, setProject, suppressOcrHistoryRef]
+    [
+      images,
+      isOCRProject,
+      recordOcrHistory,
+      setImages,
+      setProject,
+      setSelectedShapeIds,
+      suppressOcrHistoryRef,
+    ]
   );
 
   const applyOcrAnnotationsForImage = useCallback(
@@ -170,14 +191,14 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
   const handleUndo = useCallback(async () => {
     const image = currentImage;
     if (!isOCRProject || !image || isBlocked || isApplyingHistory) return;
-    const entry = ocrHistory[image.id] || { past: [], future: [] };
-    if (!entry.past.length) return;
+    const entry = ocrHistory[image.id];
+    if (!entry?.past.length) return;
     const currentSnapshot = cloneOcrAnnotations(image.ocr_annotations || []);
-    let previousSnapshot: OCRAnnotation[] | null = null;
+    const previousSnapshot = entry.past[entry.past.length - 1];
+
     setOcrHistory((prev) => {
-      const stateEntry = prev[image.id] || { past: [], future: [] };
-      if (!stateEntry.past.length) return prev;
-      previousSnapshot = stateEntry.past[stateEntry.past.length - 1];
+      const stateEntry = prev[image.id];
+      if (!stateEntry?.past.length) return prev;
       return {
         ...prev,
         [image.id]: {
@@ -186,7 +207,7 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
         },
       };
     });
-    if (!previousSnapshot) return;
+
     setIsApplyingHistory(true);
     try {
       await applyOcrAnnotationsForImage(image, cloneOcrAnnotations(previousSnapshot));
@@ -222,14 +243,14 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
   const handleRedo = useCallback(async () => {
     const image = currentImage;
     if (!isOCRProject || !image || isBlocked || isApplyingHistory) return;
-    const entry = ocrHistory[image.id] || { past: [], future: [] };
-    if (!entry.future.length) return;
+    const entry = ocrHistory[image.id];
+    if (!entry?.future.length) return;
     const currentSnapshot = cloneOcrAnnotations(image.ocr_annotations || []);
-    let nextSnapshot: OCRAnnotation[] | null = null;
+    const nextSnapshot = entry.future[entry.future.length - 1];
+
     setOcrHistory((prev) => {
-      const stateEntry = prev[image.id] || { past: [], future: [] };
-      if (!stateEntry.future.length) return prev;
-      nextSnapshot = stateEntry.future[stateEntry.future.length - 1];
+      const stateEntry = prev[image.id];
+      if (!stateEntry?.future.length) return prev;
       return {
         ...prev,
         [image.id]: {
@@ -238,7 +259,7 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
         },
       };
     });
-    if (!nextSnapshot) return;
+
     setIsApplyingHistory(true);
     try {
       await applyOcrAnnotationsForImage(image, cloneOcrAnnotations(nextSnapshot));
