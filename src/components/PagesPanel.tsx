@@ -44,7 +44,7 @@ const getImageLabel = (image: ImageModel) => {
   const original = (image.original_filename || "").trim();
   if (original) return original;
   const url = (image.image || "").split("?")[0];
-  const base = url.split("/").pop() || `Image ${image.id}`;
+  const base = url.split("/").pop() || "Image";
   try {
     return decodeURIComponent(base);
   } catch {
@@ -52,7 +52,7 @@ const getImageLabel = (image: ImageModel) => {
   }
 };
 
-const DEFAULT_WIDTH = 320;
+const DEFAULT_WIDTH = 340;
 const MIN_WIDTH = 240;
 
 const PagesPanel: React.FC<PagesPanelProps> = ({
@@ -71,6 +71,12 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
   const [showThumbnails, setShowThumbnails] = useState(true);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const lastSelectedIndexRef = useRef<number | null>(null);
+  const actionButtonSx = {
+    textTransform: "none",
+    borderRadius: 1.5,
+    fontWeight: 600,
+    minHeight: 34,
+  };
 
   const items = useMemo(() => {
     const withNames = images.map((image, index) => ({
@@ -221,30 +227,78 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
         </Tooltip>
       </Box>
 
-      <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 1 }}>
-        <ToggleButtonGroup
-          size="small"
-          value={sortBy}
-          exclusive
-          onChange={(_, value: SortMode | null) => value && setSortBy(value)}
-          sx={{ "& .MuiToggleButton-root": { px: 1.25 } }}
-        >
-          <ToggleButton value="id">ID</ToggleButton>
-          <ToggleButton value="name">Name</ToggleButton>
-        </ToggleButtonGroup>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-          <Switch
+      <Box sx={{ display: "grid", gap: 0.5 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
+          Sort
+        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <ToggleButtonGroup
             size="small"
-            checked={showThumbnails}
-            onChange={(event) => setShowThumbnails(event.target.checked)}
-          />
-          <Typography variant="caption" color="text.secondary">
-            Thumbnails
-          </Typography>
+            value={sortBy}
+            exclusive
+            onChange={(_, value: SortMode | null) => value && setSortBy(value)}
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              p: 0.25,
+              borderRadius: 999,
+              backgroundColor: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              "& .MuiToggleButtonGroup-grouped": {
+                border: "none",
+              },
+              "& .MuiToggleButton-root": {
+                border: "none",
+                borderRadius: 999,
+                textTransform: "none",
+                fontWeight: 600,
+                flex: 1,
+                minWidth: 0,
+                color: "text.secondary",
+                "&.Mui-selected": {
+                  backgroundColor: "rgba(78,168,255,0.2)",
+                  color: "primary.main",
+                },
+                "&.Mui-selected:hover": {
+                  backgroundColor: "rgba(78,168,255,0.28)",
+                },
+              },
+            }}
+          >
+            <ToggleButton value="id">Order</ToggleButton>
+            <ToggleButton value="name">Name</ToggleButton>
+          </ToggleButtonGroup>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 0.75,
+              px: 1,
+              py: 0.5,
+              borderRadius: 999,
+              backgroundColor: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
+            <Typography variant="caption" color="text.secondary" fontWeight={600}>
+              Thumbnails
+            </Typography>
+            <Switch
+              size="small"
+              checked={showThumbnails}
+              onChange={(event) => setShowThumbnails(event.target.checked)}
+            />
+          </Box>
         </Box>
       </Box>
 
-      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+      <Box
+        sx={{
+          display: "grid",
+          gap: 0.75,
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+        }}
+      >
         <Button
           size="small"
           variant="outlined"
@@ -252,6 +306,8 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
           startIcon={<DeleteOutline />}
           disabled={isBlocked || selectedIds.length === 0}
           onClick={() => handleBulkAction(onDeleteImages)}
+          fullWidth
+          sx={actionButtonSx}
         >
           Delete
         </Button>
@@ -261,6 +317,8 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
           startIcon={<DeleteSweep />}
           disabled={isBlocked || selectedIds.length === 0}
           onClick={() => handleBulkAction(onClearAnnotations)}
+          fullWidth
+          sx={actionButtonSx}
         >
           Clear Annotations
         </Button>
@@ -269,18 +327,24 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
             <Button
               size="small"
               variant="outlined"
+              color="success"
               startIcon={<CheckCircleOutline />}
               disabled={isBlocked || selectedIds.length === 0}
               onClick={() => handleValidationAction(true)}
+              fullWidth
+              sx={actionButtonSx}
             >
               Validate
             </Button>
             <Button
               size="small"
               variant="outlined"
+              color="warning"
               startIcon={<CancelOutlined />}
               disabled={isBlocked || selectedIds.length === 0}
               onClick={() => handleValidationAction(false)}
+              fullWidth
+              sx={actionButtonSx}
             >
               Unvalidate
             </Button>
@@ -290,6 +354,8 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
               startIcon={<PlayArrow />}
               disabled={isBlocked || selectedIds.length === 0}
               onClick={() => handleBulkAction(onRunInference)}
+              fullWidth
+              sx={{ ...actionButtonSx, gridColumn: "1 / -1" }}
             >
               Run Inference
             </Button>
@@ -317,10 +383,22 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
                     onClick={(event) => handleRowClick(event, itemIndex)}
                     sx={{
                       minHeight: rowHeight,
-                      borderRadius: 1,
+                      borderRadius: 1.5,
                       gap: 1,
                       alignItems: "center",
                       borderLeft: isCurrent ? "3px solid #4ea8ff" : "3px solid transparent",
+                      backgroundColor: "rgba(255,255,255,0.02)",
+                      transition: "background-color 150ms ease, box-shadow 150ms ease",
+                      "&:hover": {
+                        backgroundColor: "rgba(255,255,255,0.06)",
+                      },
+                      "&.Mui-selected": {
+                        backgroundColor: "rgba(78,168,255,0.16)",
+                        boxShadow: "0 0 0 1px rgba(78,168,255,0.2)",
+                      },
+                      "&.Mui-selected:hover": {
+                        backgroundColor: "rgba(78,168,255,0.22)",
+                      },
                     }}
                   >
                     {showThumbnails && (
@@ -344,10 +422,18 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
                     )}
                     <Box sx={{ flexGrow: 1, minWidth: 0 }}>
                       <Typography variant="body2" noWrap>
+                        <Box
+                          component="span"
+                          sx={{
+                            mr: 0.75,
+                            color: "text.secondary",
+                            fontWeight: 600,
+                            fontVariantNumeric: "tabular-nums",
+                          }}
+                        >
+                          # {index + 1} - 
+                        </Box>
                         {name}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {`ID ${image.id} - Page ${index + 1}`}
                       </Typography>
                     </Box>
                     {showOcrActions && image.is_label && (
