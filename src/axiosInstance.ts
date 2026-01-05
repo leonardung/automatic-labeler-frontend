@@ -1,7 +1,9 @@
 import axios, { AxiosError, AxiosHeaders, AxiosResponse, InternalAxiosRequestConfig } from "axios";
 
+const rawApiBaseUrl = process.env.REACT_APP_API_BASE_URL || "http://localhost:8002/api/";
+const apiBaseUrl = rawApiBaseUrl.endsWith("/") ? rawApiBaseUrl : `${rawApiBaseUrl}/`;
 const axiosInstance = axios.create({
-  baseURL: "http://localhost:8002/api/",
+  baseURL: apiBaseUrl,
 });
 
 axiosInstance.interceptors.request.use(
@@ -25,7 +27,7 @@ axiosInstance.interceptors.response.use(
 
     if (error.response?.status === 401 && refreshToken && originalRequest) {
       try {
-        const response = await axios.post("http://localhost:8002/api/token/refresh/", {
+        const response = await axios.post(`${apiBaseUrl}token/refresh/`, {
           refresh: refreshToken,
         });
         const access = response.data.access as string;
