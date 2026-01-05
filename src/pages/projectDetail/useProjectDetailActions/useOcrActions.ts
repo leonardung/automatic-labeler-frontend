@@ -357,7 +357,6 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
       if (!image || !image.id) return;
 
       try {
-        startBlocking(nextValidated ? "Marking page as validated..." : "Removing validation...");
         const response = await axiosInstance.patch<ImageModel>(
           `${imageEndpointBase}/${image.id}/`,
           { is_label: nextValidated }
@@ -375,19 +374,9 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
           message: "Failed to update validation state.",
           severity: "error",
         });
-      } finally {
-        stopBlocking();
       }
     },
-    [
-      currentImage,
-      handleImageUpdated,
-      imageEndpointBase,
-      isBlocked,
-      setNotification,
-      startBlocking,
-      stopBlocking,
-    ]
+    [currentImage, handleImageUpdated, imageEndpointBase, isBlocked, setNotification]
   );
 
   const handleSetValidationForImages = useCallback(
@@ -409,7 +398,6 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
         return;
       }
 
-      startBlocking(nextValidated ? "Validating selected pages..." : "Unvalidating selected pages...");
       try {
         const results = await Promise.allSettled(
           targets.map((img) =>
@@ -466,21 +454,9 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
           message: "Failed to update validation for selected pages.",
           severity: "error",
         });
-      } finally {
-        stopBlocking();
       }
     },
-    [
-      imageEndpointBase,
-      images,
-      isBlocked,
-      isOCRProject,
-      setImages,
-      setNotification,
-      setProject,
-      startBlocking,
-      stopBlocking,
-    ]
+    [imageEndpointBase, images, isBlocked, isOCRProject, setImages, setNotification, setProject]
   );
 
   const handleFullInference = useCallback(async () => {
