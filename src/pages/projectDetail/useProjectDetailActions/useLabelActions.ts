@@ -334,10 +334,118 @@ export const useLabelActions = (state: ProjectDetailState, deps: LabelDependenci
     setSelectedShapeIds,
   ]);
 
+  const handleClearAnnotationsForImages = useCallback(
+    async (imageIds: number[]) => {
+      if (isBlocked) return;
+      const uniqueIds = Array.from(new Set(imageIds));
+      if (!uniqueIds.length) return;
+      const targets = images.filter((img) => uniqueIds.includes(img.id));
+      if (!targets.length) return;
+
+      if (isOCRProject) {
+        startBlocking(`Clearing OCR annotations for ${targets.length} page(s)...`);
+        try {
+          for (const targetImage of targets) {
+            recordOcrHistory(
+              targetImage.id,
+              cloneOcrAnnotations(targetImage.ocr_annotations || []),
+              []
+            );
+            await axiosInstance.delete(`${imageEndpointBase}/${targetImage.id}/ocr_annotations/`, {
+              data: { ids: [] },
+            });
+          }
+          setImages((prev) =>
+            prev.map((img) =>
+              uniqueIds.includes(img.id) ? { ...img, ocr_annotations: [] } : img
+            )
+          );
+          setProject((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  images: prev.images.map((img) =>
+                    uniqueIds.includes(img.id) ? { ...img, ocr_annotations: [] } : img
+                  ),
+                }
+              : prev
+          );
+          if (currentImage && uniqueIds.includes(currentImage.id)) {
+            setSelectedShapeIds([]);
+          }
+          setNotification({
+            open: true,
+            message: `Cleared OCR annotations for ${targets.length} page(s).`,
+            severity: "info",
+          });
+        } catch (error) {
+          console.error("Error clearing OCR annotations:", error);
+          setNotification({
+            open: true,
+            message: "Failed to clear OCR annotations.",
+            severity: "error",
+          });
+        } finally {
+          stopBlocking();
+        }
+        return;
+      }
+
+      startBlocking(`Clearing annotations for ${targets.length} page(s)...`);
+      try {
+        for (const targetImage of targets) {
+          await axiosInstance.delete(`images/${targetImage.id}/delete_mask/`);
+        }
+        setImages((prev) =>
+          prev.map((img) => (uniqueIds.includes(img.id) ? { ...img, masks: [] } : img))
+        );
+        setProject((prev) =>
+          prev
+            ? {
+                ...prev,
+                images: prev.images.map((img) =>
+                  uniqueIds.includes(img.id) ? { ...img, masks: [] } : img
+                ),
+              }
+            : prev
+        );
+        setNotification({
+          open: true,
+          message: `Cleared annotations for ${targets.length} page(s).`,
+          severity: "info",
+        });
+      } catch (error) {
+        console.error("Error clearing annotations:", error);
+        setNotification({
+          open: true,
+          message: "Failed to clear annotations.",
+          severity: "error",
+        });
+      } finally {
+        stopBlocking();
+      }
+    },
+    [
+      currentImage,
+      imageEndpointBase,
+      images,
+      isBlocked,
+      isOCRProject,
+      recordOcrHistory,
+      setImages,
+      setNotification,
+      setProject,
+      setSelectedShapeIds,
+      startBlocking,
+      stopBlocking,
+    ]
+  );
+
   return {
     handleGenerateFromPrompt,
     handlePropagateMask,
     handlePointsUpdated,
     handleClearLabels,
+    handleClearAnnotationsForImages,
   };
 };

@@ -3,7 +3,7 @@ import { Box } from "@mui/material";
 import ImageDisplaySegmentation from "../../components/ImageDisplaySegmentation";
 import NavigationButtons from "../../components/NavigationButtons";
 import Controls from "../../components/Controls";
-import ThumbnailGrid from "../../components/ThumbnailGrid";
+import PagesPanel from "../../components/PagesPanel";
 import MaskCategoryPanel from "../../components/MaskCategoryPanel";
 import TextPromptMaskForm from "../../components/TextPromptMaskForm";
 import ViewportControls from "./ViewportControls";
@@ -36,6 +36,8 @@ interface SegmentationWorkspaceProps {
   onPropagateMask: () => void;
   onClearLabels: () => void;
   onThumbnailClick: (index: number) => void;
+  onDeleteImages: (imageIds: number[]) => void;
+  onClearAnnotationsForImages: (imageIds: number[]) => void;
   viewportControls: ViewportControlsType | null;
   onRegisterViewportControls: (controls: ViewportControlsType | null) => void;
 }
@@ -66,6 +68,8 @@ const SegmentationWorkspace = ({
   onPropagateMask,
   onClearLabels,
   onThumbnailClick,
+  onDeleteImages,
+  onClearAnnotationsForImages,
   viewportControls,
   onRegisterViewportControls,
 }: SegmentationWorkspaceProps) => (
@@ -158,12 +162,15 @@ const SegmentationWorkspace = ({
           </Box>
         </Box>
       </Box>
+      <PagesPanel
+        images={images}
+        currentIndex={currentIndex}
+        onSelectImage={onThumbnailClick}
+        isBlocked={isBlocked}
+        onDeleteImages={onDeleteImages}
+        onClearAnnotations={onClearAnnotationsForImages}
+      />
     </Box>
-    <ThumbnailGrid
-      images={images}
-      onThumbnailClick={onThumbnailClick}
-      currentIndex={currentIndex}
-    />
   </Box>
 );
 

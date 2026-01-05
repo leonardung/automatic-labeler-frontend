@@ -21,6 +21,7 @@ export const useMediaActions = (state: ProjectDetailState, deps: MediaDependenci
     images,
     setImages,
     setCurrentIndex,
+    currentIndex,
     maxFrames,
     stride,
     imageEndpointBase,
@@ -31,6 +32,9 @@ export const useMediaActions = (state: ProjectDetailState, deps: MediaDependenci
     project,
     setDatasetImportProgress,
     setIsImportingDataset,
+    setProject,
+    setOcrHistory,
+    setSelectedShapeIds,
   } = state;
   const {
     startLoading,
@@ -236,10 +240,106 @@ export const useMediaActions = (state: ProjectDetailState, deps: MediaDependenci
     stopBlocking,
   ]);
 
+  const handleDeleteImages = useCallback(
+    async (imageIds: number[]) => {
+      if (isBlocked) return;
+      const uniqueIds = Array.from(new Set(imageIds)).filter((id) => Number.isFinite(id));
+      if (!uniqueIds.length) return;
+
+      startBlocking(`Deleting ${uniqueIds.length} page(s)...`);
+      try {
+        const results = await Promise.allSettled(
+          uniqueIds.map((id) => axiosInstance.delete(`${imageEndpointBase}/${id}/`))
+        );
+        const succeededIds: number[] = [];
+        const failedIds: number[] = [];
+        results.forEach((result, idx) => {
+          if (result.status === "fulfilled") {
+            succeededIds.push(uniqueIds[idx]);
+          } else {
+            failedIds.push(uniqueIds[idx]);
+          }
+        });
+
+        if (succeededIds.length) {
+          const remainingImages = images.filter((img) => !succeededIds.includes(img.id));
+          const currentId = images[currentIndex]?.id;
+          const nextIndex =
+            remainingImages.length === 0
+              ? 0
+              : currentId && remainingImages.some((img) => img.id === currentId)
+              ? remainingImages.findIndex((img) => img.id === currentId)
+              : Math.min(currentIndex, remainingImages.length - 1);
+
+          setImages(remainingImages);
+          setProject((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  images: prev.images.filter((img) => !succeededIds.includes(img.id)),
+                }
+              : prev
+          );
+          setCurrentIndex(nextIndex);
+
+          if (isOCRProject) {
+            setOcrHistory((prev) => {
+              const next = { ...prev };
+              succeededIds.forEach((id) => {
+                delete next[id];
+              });
+              return next;
+            });
+            setSelectedShapeIds([]);
+          }
+        }
+
+        if (failedIds.length) {
+          setNotification({
+            open: true,
+            message: `Failed to delete ${failedIds.length} page(s).`,
+            severity: "error",
+          });
+        } else {
+          setNotification({
+            open: true,
+            message: `Deleted ${succeededIds.length} page(s).`,
+            severity: "success",
+          });
+        }
+      } catch (error) {
+        console.error("Error deleting images:", error);
+        setNotification({
+          open: true,
+          message: "Failed to delete pages.",
+          severity: "error",
+        });
+      } finally {
+        stopBlocking();
+      }
+    },
+    [
+      currentIndex,
+      imageEndpointBase,
+      images,
+      isBlocked,
+      isOCRProject,
+      setCurrentIndex,
+      setImages,
+      setNotification,
+      setOcrHistory,
+      setProject,
+      setSelectedShapeIds,
+      startBlocking,
+      stopBlocking,
+    ]
+  );
+
   return {
     selectFiles,
     handleSelectFolder,
     handleSettingsSubmit,
     handleImportOcrDataset,
+    handleDeleteImages,
   };
 };

@@ -13,7 +13,7 @@ import RedoIcon from "@mui/icons-material/Redo";
 import ImageDisplayOCR from "../../components/ImageDisplayOCR";
 import NavigationButtons from "../../components/NavigationButtons";
 import Controls from "../../components/Controls";
-import ThumbnailGrid from "../../components/ThumbnailGrid";
+import PagesPanel from "../../components/PagesPanel";
 import OCRControls from "../../components/OCRControls";
 import OCRTextList from "../../components/OCRTextList";
 import OcrCategoryPanel from "../../components/OcrCategoryPanel";
@@ -64,6 +64,10 @@ interface OcrWorkspaceProps {
   onPrevImage: () => void;
   onNextImage: () => void;
   onThumbnailClick: (index: number) => void;
+  onDeleteImages: (imageIds: number[]) => void;
+  onClearAnnotationsForImages: (imageIds: number[]) => void;
+  onSetValidationForImages: (imageIds: number[], nextValidated: boolean) => void;
+  onRunInferenceForImages: (imageIds: number[]) => void;
   onPropagateMask: () => void;
   onClearLabels: () => void;
   viewportControls: ViewportControlsType | null;
@@ -114,6 +118,10 @@ const OcrWorkspace = ({
   onPrevImage,
   onNextImage,
   onThumbnailClick,
+  onDeleteImages,
+  onClearAnnotationsForImages,
+  onSetValidationForImages,
+  onRunInferenceForImages,
   onPropagateMask,
   onClearLabels,
   viewportControls,
@@ -341,12 +349,18 @@ const OcrWorkspace = ({
             </Box>
           </Box>
         </Box>
+        <PagesPanel
+          images={images}
+          currentIndex={currentIndex}
+          onSelectImage={onThumbnailClick}
+          isBlocked={isBlocked}
+          showOcrActions
+          onDeleteImages={onDeleteImages}
+          onClearAnnotations={onClearAnnotationsForImages}
+          onValidateImages={onSetValidationForImages}
+          onRunInference={onRunInferenceForImages}
+        />
       </Box>
-      <ThumbnailGrid
-        images={images}
-        onThumbnailClick={onThumbnailClick}
-        currentIndex={currentIndex}
-      />
     </Box>
   );
 };

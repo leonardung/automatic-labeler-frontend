@@ -390,6 +390,99 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
     ]
   );
 
+  const handleSetValidationForImages = useCallback(
+    async (imageIds: number[], nextValidated: boolean) => {
+      if (!isOCRProject || isBlocked) return;
+      const uniqueIds = Array.from(new Set(imageIds));
+      if (!uniqueIds.length) return;
+      const targets = images.filter(
+        (img) => uniqueIds.includes(img.id) && img.id && img.is_label !== nextValidated
+      );
+      if (!targets.length) {
+        setNotification({
+          open: true,
+          message: nextValidated
+            ? "Selected pages are already validated."
+            : "Selected pages are already unvalidated.",
+          severity: "info",
+        });
+        return;
+      }
+
+      startBlocking(nextValidated ? "Validating selected pages..." : "Unvalidating selected pages...");
+      try {
+        const results = await Promise.allSettled(
+          targets.map((img) =>
+            axiosInstance.patch<ImageModel>(`${imageEndpointBase}/${img.id}/`, {
+              is_label: nextValidated,
+            })
+          )
+        );
+        const updatedImages: ImageModel[] = [];
+        let failed = 0;
+        results.forEach((result, idx) => {
+          if (result.status === "fulfilled") {
+            const payload = result.value.data || { ...targets[idx], is_label: nextValidated };
+            updatedImages.push(decorateImage(payload));
+          } else {
+            failed += 1;
+          }
+        });
+        if (updatedImages.length) {
+          const updatesById = new Map(updatedImages.map((img) => [img.id, img]));
+          setImages((prev) =>
+            prev.map((img) => (updatesById.has(img.id) ? { ...img, ...updatesById.get(img.id)! } : img))
+          );
+          setProject((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  images: prev.images.map((img) =>
+                    updatesById.has(img.id) ? { ...img, ...updatesById.get(img.id)! } : img
+                  ),
+                }
+              : prev
+          );
+        }
+        if (failed) {
+          setNotification({
+            open: true,
+            message: `${failed} page(s) failed to update validation.`,
+            severity: "error",
+          });
+        } else {
+          setNotification({
+            open: true,
+            message: nextValidated
+              ? `Validated ${updatedImages.length} page(s).`
+              : `Unvalidated ${updatedImages.length} page(s).`,
+            severity: "success",
+          });
+        }
+      } catch (error) {
+        console.error("Error updating validation for selected pages:", error);
+        setNotification({
+          open: true,
+          message: "Failed to update validation for selected pages.",
+          severity: "error",
+        });
+      } finally {
+        stopBlocking();
+      }
+    },
+    [
+      imageEndpointBase,
+      images,
+      isBlocked,
+      isOCRProject,
+      setImages,
+      setNotification,
+      setProject,
+      startBlocking,
+      stopBlocking,
+    ]
+  );
+
   const handleFullInference = useCallback(async () => {
     if (isBlocked) return;
     const image = images[currentIndex];
@@ -437,6 +530,87 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
     startBlocking,
     stopBlocking,
   ]);
+
+  const handleRunInferenceForImages = useCallback(
+    async (imageIds: number[]) => {
+      if (!isOCRProject || isBlocked) return;
+      if (!hasSelectedOcrModel()) {
+        setNotification({
+          open: true,
+          message: "Select at least one model before running inference.",
+          severity: "warning",
+        });
+        return;
+      }
+      const uniqueIds = Array.from(new Set(imageIds));
+      if (!uniqueIds.length) return;
+      const targets = images.filter((img) => uniqueIds.includes(img.id) && img.id);
+      const runnable = targets.filter((img) => !img.is_label);
+      const skipped = targets.length - runnable.length;
+
+      if (!runnable.length) {
+        setNotification({
+          open: true,
+          message: "Selected pages are validated. Unvalidate to run inference.",
+          severity: "info",
+        });
+        return;
+      }
+
+      startBlocking(`Running inference on ${runnable.length} page(s)...`);
+      let successCount = 0;
+      let failureCount = 0;
+      try {
+        for (const img of runnable) {
+          try {
+            const result = await runFullInferenceForImage(img, selectedOcrModels);
+            handleImageUpdated({ ...img, ocr_annotations: result.shapes || [] });
+            successCount += 1;
+          } catch (error) {
+            console.error("Inference failed for image", img.id, error);
+            failureCount += 1;
+          }
+        }
+      } finally {
+        stopBlocking();
+      }
+
+      const messageParts = [];
+      if (successCount) {
+        messageParts.push(`Inference completed for ${successCount} page(s).`);
+      }
+      if (skipped) {
+        messageParts.push(`${skipped} skipped (validated).`);
+      }
+      if (failureCount) {
+        messageParts.push(`${failureCount} failed.`);
+      }
+      const severity =
+        failureCount > 0 && successCount > 0
+          ? "warning"
+          : failureCount > 0
+          ? "error"
+          : "success";
+
+      setNotification({
+        open: true,
+        message: messageParts.join(" "),
+        severity,
+      });
+    },
+    [
+      handleImageUpdated,
+      hasSelectedOcrModel,
+      images,
+      isBlocked,
+      isOCRProject,
+      runFullInferenceForImage,
+      selectedOcrModels,
+      setNotification,
+      startBlocking,
+      stopBlocking,
+    ]
+  );
 
   const handleBulkDetectRecognize = useCallback(async () => {
     if (isBlocked) return;
@@ -539,7 +713,9 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
     handleRecognizeSelected,
     runFullInferenceForImage,
     handleSetValidation,
+    handleSetValidationForImages,
     handleFullInference,
+    handleRunInferenceForImages,
     handleBulkDetectRecognize,
     handleOcrToolChange,
     handleShowOcrTextChange,
