@@ -52,7 +52,7 @@ const getImageLabel = (image: ImageModel) => {
   }
 };
 
-const DEFAULT_WIDTH = 340;
+const DEFAULT_WIDTH = 400;
 const MIN_WIDTH = 240;
 
 const PagesPanel: React.FC<PagesPanelProps> = ({
@@ -71,12 +71,6 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
   const [showThumbnails, setShowThumbnails] = useState(true);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const lastSelectedIndexRef = useRef<number | null>(null);
-  const actionButtonSx = {
-    textTransform: "none",
-    borderRadius: 1.5,
-    fontWeight: 600,
-    minHeight: 34,
-  };
 
   const items = useMemo(() => {
     const withNames = images.map((image, index) => ({
@@ -300,64 +294,56 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
         }}
       >
         <Button
-          size="small"
           variant="outlined"
           color="error"
           startIcon={<DeleteOutline />}
           disabled={isBlocked || selectedIds.length === 0}
           onClick={() => handleBulkAction(onDeleteImages)}
           fullWidth
-          sx={actionButtonSx}
         >
           Delete
         </Button>
         <Button
-          size="small"
           variant="outlined"
-          startIcon={<DeleteSweep />}
+          color="secondary"
           disabled={isBlocked || selectedIds.length === 0}
           onClick={() => handleBulkAction(onClearAnnotations)}
           fullWidth
-          sx={actionButtonSx}
         >
           Clear Annotations
         </Button>
         {showOcrActions && (
           <>
             <Button
-              size="small"
-              variant="outlined"
+              variant="contained"
               color="success"
               startIcon={<CheckCircleOutline />}
               disabled={isBlocked || selectedIds.length === 0}
               onClick={() => handleValidationAction(true)}
               fullWidth
-              sx={actionButtonSx}
             >
               Validate
             </Button>
             <Button
-              size="small"
               variant="outlined"
-              color="warning"
+              color="success"
               startIcon={<CancelOutlined />}
               disabled={isBlocked || selectedIds.length === 0}
               onClick={() => handleValidationAction(false)}
               fullWidth
-              sx={actionButtonSx}
             >
               Unvalidate
             </Button>
             <Button
-              size="small"
               variant="contained"
+              color="secondary"
               startIcon={<PlayArrow />}
               disabled={isBlocked || selectedIds.length === 0}
               onClick={() => handleBulkAction(onRunInference)}
               fullWidth
-              sx={{ ...actionButtonSx, gridColumn: "1 / -1" }}
+              sx={{ gridColumn: "1 / -1" }}
             >
-              Run Inference
+              Run Inference On Selected Pages
             </Button>
           </>
         )}
