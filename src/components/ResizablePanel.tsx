@@ -19,6 +19,7 @@ interface ResizablePanelProps extends BoxProps {
   handleSize?: number;
   disabled?: boolean;
   lockFlexOnResize?: boolean;
+  contentSx?: BoxProps["sx"];
 }
 
 const ResizablePanel: React.FC<ResizablePanelProps> = ({
@@ -34,6 +35,7 @@ const ResizablePanel: React.FC<ResizablePanelProps> = ({
   handleSize = 8,
   disabled,
   lockFlexOnResize,
+  contentSx,
   sx,
   children,
   ...rest
@@ -218,6 +220,11 @@ const ResizablePanel: React.FC<ResizablePanelProps> = ({
     return Array.isArray(sx) ? [...sx, baseSx] : [sx, baseSx];
   }, [baseSx, sx]);
 
+  const content = useMemo(() => {
+    if (!contentSx) return children;
+    return <Box sx={contentSx}>{children}</Box>;
+  }, [children, contentSx]);
+
   const handlePositionStyles =
     resolvedHandlePosition === "bottom-left"
       ? {
@@ -244,32 +251,45 @@ const ResizablePanel: React.FC<ResizablePanelProps> = ({
 
   return (
     <Box ref={containerRef} sx={mergedSx} {...rest}>
-      {children}
+      {content}
       <Box
-        role="separator"
-        aria-orientation={axis}
-        onMouseDown={handleMouseDown}
         sx={{
-          position: "absolute",
+          position: "sticky",
           bottom: handleOffset,
-          width: handleSize + 10,
-          height: handleSize + 10,
-          display: "flex",
-          alignItems: "flex-end",
-          cursor,
-          color: "rgba(255,255,255,0.4)",
-          "&:hover": { color: "rgba(255,255,255,0.7)" },
-          ...handlePositionStyles,
+          height: 0,
+          width: "100%",
+          zIndex: 2,
+          pointerEvents: "none",
+          marginTop: "auto",
         }}
       >
         <Box
+          role="separator"
+          aria-orientation={axis}
+          onMouseDown={handleMouseDown}
           sx={{
-            width: handleSize,
-            height: handleSize,
-            borderBottom: "2px solid currentColor",
-            ...handleGlyphStyles,
+            position: "absolute",
+            bottom: 0,
+            width: handleSize + 10,
+            height: handleSize + 10,
+            display: "flex",
+            alignItems: "flex-end",
+            cursor,
+            color: "rgba(255,255,255,0.4)",
+            pointerEvents: "auto",
+            "&:hover": { color: "rgba(255,255,255,0.7)" },
+            ...handlePositionStyles,
           }}
-        />
+        >
+          <Box
+            sx={{
+              width: handleSize,
+              height: handleSize,
+              borderBottom: "2px solid currentColor",
+              ...handleGlyphStyles,
+            }}
+          />
+        </Box>
       </Box>
     </Box>
   );

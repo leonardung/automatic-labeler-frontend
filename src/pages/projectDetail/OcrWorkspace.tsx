@@ -144,14 +144,17 @@ const OcrWorkspace = ({
           sx={{
             flexShrink: 0,
             overflow: "auto",
-            display: "flex",
-            flexDirection: "column",
-            gap: 1.5,
             height: "100%",
-            p: 2,
             backgroundColor: "#0f1624",
             borderRight: "1px solid #1f2a3d",
             boxShadow: "inset -1px 0 0 rgba(255,255,255,0.04)",
+          }}
+          contentSx={{
+            display: "flex",
+            flexDirection: "column",
+            minHeight: "100%",
+            gap: 1.5,
+            p: 2,
           }}
         >
           {currentImage && (
