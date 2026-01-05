@@ -279,10 +279,18 @@ const useImageDisplay = (imageSrc: string | null, options: UseImageDisplayOption
         }
       }
 
-      const { clientX, clientY, deltaY, deltaX, ctrlKey, metaKey } = event;
+      const { clientX, clientY, deltaY, deltaX, ctrlKey, metaKey, shiftKey } = event;
 
       if (wheelBehavior === "scrollPanCtrlZoom" && !(ctrlKey || metaKey)) {
-        applyPanDelta(-deltaX, -deltaY, { clampX: true, clampY: true });
+        let panDeltaX = deltaX;
+        let panDeltaY = deltaY;
+
+        if (shiftKey) {
+          panDeltaX = deltaX !== 0 ? deltaX : deltaY;
+          panDeltaY = 0;
+        }
+
+        applyPanDelta(-panDeltaX, -panDeltaY, { clampX: true, clampY: true });
         return;
       }
 
