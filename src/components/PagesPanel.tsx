@@ -51,6 +51,11 @@ const getImageLabel = (image: ImageModel) => {
   }
 };
 
+const DEFAULT_WIDTH = 320;
+const MIN_WIDTH = 240;
+
+const getMaxWidth = () => (typeof window !== "undefined" ? window.innerWidth * 0.4 : 520);
+
 const PagesPanel: React.FC<PagesPanelProps> = ({
   images,
   currentIndex,
@@ -67,6 +72,21 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
   const [showThumbnails, setShowThumbnails] = useState(true);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const lastSelectedIndexRef = useRef<number | null>(null);
+  const startXRef = useRef(0);
+  const startWidthRef = useRef(DEFAULT_WIDTH);
+  const draggingRef = useRef(false);
+
+  const clampWidth = React.useCallback((nextWidth: number) => {
+    return Math.min(Math.max(MIN_WIDTH, nextWidth), getMaxWidth());
+  }, []);
+
+  const [panelWidth, setPanelWidth] = useState(() => clampWidth(DEFAULT_WIDTH));
+
+  useEffect(() => {
+    const handleResize = () => setPanelWidth((prev) => clampWidth(prev));
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [clampWidth]);
 
   const items = useMemo(() => {
     const withNames = images.map((image, index) => ({
@@ -152,6 +172,41 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
     await onValidateImages(selectedIds, nextValidated);
   };
 
+  const handleMouseMove = React.useCallback(
+    (event: MouseEvent) => {
+      if (!draggingRef.current) return;
+      const deltaX = startXRef.current - event.clientX;
+      setPanelWidth(clampWidth(startWidthRef.current + deltaX));
+    },
+    [clampWidth]
+  );
+
+  const stopDragging = React.useCallback(() => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    document.body.style.userSelect = "";
+    window.removeEventListener("mousemove", handleMouseMove);
+    window.removeEventListener("mouseup", stopDragging);
+  }, [handleMouseMove]);
+
+  const handleMouseDown = (event: React.MouseEvent) => {
+    draggingRef.current = true;
+    startXRef.current = event.clientX;
+    startWidthRef.current = panelWidth;
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", stopDragging);
+  };
+
+  useEffect(
+    () => () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", stopDragging);
+      document.body.style.userSelect = "";
+    },
+    [handleMouseMove, stopDragging]
+  );
+
   if (isCollapsed) {
     return (
       <Box
@@ -182,15 +237,17 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
     <Box
       sx={{
         flexShrink: 0,
-        width: 320,
-        minWidth: 240,
+        width: panelWidth,
+        minWidth: MIN_WIDTH,
         maxWidth: "40vw",
-        resize: "horizontal",
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
         height: "100%",
-        p: 1.5,
+        position: "relative",
+        px: 1.5,
+        pt: 1.5,
+        pb: 3,
         backgroundColor: "#0f1624",
         borderLeft: "1px solid #1f2a3d",
         boxShadow: "inset 1px 0 0 rgba(255,255,255,0.04)",
@@ -370,6 +427,32 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
             })}
           </List>
         )}
+      </Box>
+      <Box
+        onMouseDown={handleMouseDown}
+        sx={{
+          position: "absolute",
+          left: 4,
+          bottom: 4,
+          width: 16,
+          height: 16,
+          display: "flex",
+          alignItems: "flex-end",
+          justifyContent: "flex-start",
+          cursor: "col-resize",
+          color: "rgba(255,255,255,0.4)",
+          "&:hover": { color: "rgba(255,255,255,0.7)" },
+        }}
+      >
+        <Box
+          sx={{
+            width: 8,
+            height: 8,
+            borderLeft: "2px solid currentColor",
+            borderBottom: "2px solid currentColor",
+            borderBottomLeftRadius: 2,
+          }}
+        />
       </Box>
     </Box>
   );
