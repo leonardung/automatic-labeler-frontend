@@ -200,7 +200,8 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
       contentSx={{
         display: "flex",
         flexDirection: "column",
-        minHeight: "100%",
+        height: "100%",
+        minHeight: 0,
         p: 1.5,
         gap: 1.25,
       }}
@@ -351,13 +352,23 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
 
       <Divider sx={{ opacity: 0.5 }} />
 
-      <Box sx={{ flexGrow: 1, minHeight: 0, overflow: "auto" }}>
+      <Box sx={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0 }}>
         {items.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
             No pages uploaded yet.
           </Typography>
         ) : (
-          <List disablePadding sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+          <List
+            disablePadding
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              flexGrow: 1,
+              gap: 0.5,
+              minHeight: 0,
+              overflow: "auto",
+            }}
+          >
             {items.map((item, itemIndex) => {
               const { image, index, name } = item;
               const isSelected = selectedIds.includes(image.id);
