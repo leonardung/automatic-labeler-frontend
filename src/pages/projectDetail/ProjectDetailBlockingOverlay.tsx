@@ -67,7 +67,7 @@ const ProjectDetailBlockingOverlay = ({
         const targetHeight = targetElement.offsetHeight;
 
         // Scroll to center the element in the middle of the viewport
-        const scrollTo = targetTop - containerHeight / 2 + targetHeight / 2;
+        const scrollTo = targetTop - containerHeight - targetHeight;
         listElement.scrollTop = scrollTo;
       }
     }
@@ -168,8 +168,8 @@ const ProjectDetailBlockingOverlay = ({
                 {datasetImportProgress.total > 0
                   ? ` (${datasetImportProgress.processed}/${datasetImportProgress.total} lines)`
                   : datasetImportProgress.processed
-                  ? ` (${datasetImportProgress.processed} lines processed)`
-                  : ""}
+                    ? ` (${datasetImportProgress.processed} lines processed)`
+                    : ""}
               </Typography>
             </Box>
           )}
@@ -181,14 +181,14 @@ const ProjectDetailBlockingOverlay = ({
                   isPropagating
                     ? propagationProgress
                     : isBulkOcrRunning
-                    ? (() => {
+                      ? (() => {
                         const totalImages = Object.keys(bulkOcrStatus).length;
                         const completedImages = Object.values(bulkOcrStatus).filter(
                           (s) => s.status === "done" || s.status === "error"
                         ).length;
                         return totalImages > 0 ? (completedImages / totalImages) * 100 : 0;
                       })()
-                    : undefined
+                      : undefined
                 }
                 sx={{ width: "100%" }}
               />
@@ -199,7 +199,7 @@ const ProjectDetailBlockingOverlay = ({
                 {isPropagating
                   ? `Propagation ${propagationProgress}% complete`
                   : isBulkOcrRunning
-                  ? (() => {
+                    ? (() => {
                       const totalImages = Object.keys(bulkOcrStatus).length;
                       const completedImages = Object.values(bulkOcrStatus).filter(
                         (s) => s.status === "done" || s.status === "error"
@@ -208,7 +208,7 @@ const ProjectDetailBlockingOverlay = ({
                         (completedImages / totalImages) * 100
                       )}%)`;
                     })()
-                  : "Running OCR..."}
+                    : "Running OCR..."}
               </Typography>
             </Box>
           )}
@@ -246,20 +246,20 @@ const ProjectDetailBlockingOverlay = ({
                   status.status === "pending"
                     ? 0
                     : status.status === "detecting"
-                    ? 40
-                    : status.status === "recognizing"
-                    ? 80
-                    : 100;
+                      ? 40
+                      : status.status === "recognizing"
+                        ? 80
+                        : 100;
                 const label =
                   status.status === "done"
                     ? "Done"
                     : status.status === "error"
-                    ? status.error || "Error"
-                    : status.status === "recognizing"
-                    ? "Recognizing..."
-                    : status.status === "detecting"
-                    ? "Detecting..."
-                    : "Pending";
+                      ? status.error || "Error"
+                      : status.status === "recognizing"
+                        ? "Recognizing..."
+                        : status.status === "detecting"
+                          ? "Detecting..."
+                          : "Pending";
                 const title = img.original_filename || `Image ${img.id}`;
                 return (
                   <Box key={img.id} sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
@@ -273,8 +273,8 @@ const ProjectDetailBlockingOverlay = ({
                         status.status === "error"
                           ? "error"
                           : status.status === "done"
-                          ? "success"
-                          : "primary"
+                            ? "success"
+                            : "primary"
                       }
                       sx={{
                         height: 6,
