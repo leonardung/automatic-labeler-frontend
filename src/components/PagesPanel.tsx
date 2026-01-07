@@ -54,6 +54,15 @@ const getImageLabel = (image: ImageModel) => {
   }
 };
 
+const hasBoxesWithoutCategories = (image: ImageModel) => {
+  if (!image.ocr_annotations || image.ocr_annotations.length === 0) {
+    return false;
+  }
+  return image.ocr_annotations.every(
+    (annotation) => !annotation.category || annotation.category === "None"
+  );
+};
+
 interface PageItemProps {
   image: ImageModel;
   index: number;
@@ -148,6 +157,22 @@ const PageItem = memo<PageItemProps>(({
             size="small"
             label="Validated"
             color="success"
+            sx={{ height: 22 }}
+          />
+        )}
+        {showOcrActions && (!image.ocr_annotations || image.ocr_annotations.length === 0) && (
+          <Chip
+            size="small"
+            label="No boxes"
+            color="warning"
+            sx={{ height: 22 }}
+          />
+        )}
+        {showOcrActions && hasBoxesWithoutCategories(image) && (
+          <Chip
+            size="small"
+            label="No category"
+            color="error"
             sx={{ height: 22 }}
           />
         )}
