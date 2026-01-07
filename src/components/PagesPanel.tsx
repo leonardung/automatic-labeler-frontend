@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, memo, useCallback } from "react";
 import {
   Box,
   Button,
@@ -51,6 +51,124 @@ const getImageLabel = (image: ImageModel) => {
     return base;
   }
 };
+
+interface PageItemProps {
+  image: ImageModel;
+  index: number;
+  name: string;
+  itemIndex: number;
+  isCurrent: boolean;
+  isSelected: boolean;
+  isBlocked: boolean;
+  showThumbnails: boolean;
+  showOcrActions: boolean;
+  rowHeight: number;
+  onRowClick: (event: React.MouseEvent, itemIndex: number) => void;
+  onDeleteSingle: (event: React.MouseEvent, imageId: number) => void;
+}
+
+const PageItem = memo<PageItemProps>(({
+  image,
+  index,
+  name,
+  itemIndex,
+  isCurrent,
+  isSelected,
+  isBlocked,
+  showThumbnails,
+  showOcrActions,
+  rowHeight,
+  onRowClick,
+  onDeleteSingle,
+}) => {
+  return (
+    <ListItem disablePadding>
+      <ListItemButton
+        selected={isSelected}
+        onClick={(event) => onRowClick(event, itemIndex)}
+        sx={{
+          minHeight: rowHeight,
+          borderRadius: 1.5,
+          gap: 1,
+          alignItems: "center",
+          borderLeft: isCurrent ? "3px solid #4ea8ff" : "3px solid transparent",
+          backgroundColor: "rgba(255,255,255,0.02)",
+          transition: "background-color 150ms ease, box-shadow 150ms ease",
+          "&:hover": {
+            backgroundColor: "rgba(255,255,255,0.06)",
+          },
+          "&.Mui-selected": {
+            backgroundColor: "rgba(78,168,255,0.16)",
+            boxShadow: "0 0 0 1px rgba(78,168,255,0.2)",
+          },
+          "&.Mui-selected:hover": {
+            backgroundColor: "rgba(78,168,255,0.22)",
+          },
+        }}
+      >
+        {showThumbnails && (
+          <Box
+            sx={{
+              width: 54,
+              height: 54,
+              borderRadius: 1,
+              overflow: "hidden",
+              flexShrink: 0,
+              border: "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
+            <img
+              src={image.thumbnail || image.image}
+              alt={name}
+              loading="lazy"
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          </Box>
+        )}
+        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+          <Typography variant="body2" noWrap>
+            <Box
+              component="span"
+              sx={{
+                mr: 0.75,
+                color: "text.secondary",
+                fontWeight: 600,
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              # {index + 1} -
+            </Box>
+            {name}
+          </Typography>
+        </Box>
+        {showOcrActions && image.is_label && (
+          <Chip
+            size="small"
+            label="Validated"
+            color="success"
+            sx={{ height: 22 }}
+          />
+        )}
+        <Tooltip title="Delete page">
+          <span>
+            <IconButton
+              size="small"
+              onClick={(event) => {
+                event.stopPropagation();
+                onDeleteSingle(event, image.id);
+              }}
+              disabled={isBlocked}
+            >
+              <DeleteOutline fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </ListItemButton>
+    </ListItem>
+  );
+});
+
+PageItem.displayName = "PageItem";
 
 const DEFAULT_WIDTH = 400;
 const MIN_WIDTH = 240;
@@ -113,7 +231,7 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
     }
   }, [items, selectedIds]);
 
-  const handleRowClick = (event: React.MouseEvent, itemIndex: number) => {
+  const handleRowClick = useCallback((event: React.MouseEvent, itemIndex: number) => {
     const item = items[itemIndex];
     if (!item) return;
     const targetId = item.image.id;
@@ -138,9 +256,9 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
 
     lastSelectedIndexRef.current = itemIndex;
     onSelectImage(item.index);
-  };
+  }, [items, onSelectImage]);
 
-  const handleBulkAction = async (
+  const handleBulkAction = useCallback(async (
     action?: (ids: number[]) => Promise<void> | void,
     idsOverride?: number[]
   ) => {
@@ -148,13 +266,17 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
     const targetIds = idsOverride ?? selectedIds;
     if (!targetIds.length) return;
     await action(targetIds);
-  };
+  }, [isBlocked, selectedIds]);
 
-  const handleValidationAction = async (nextValidated: boolean) => {
+  const handleValidationAction = useCallback(async (nextValidated: boolean) => {
     if (!onValidateImages || isBlocked) return;
     if (!selectedIds.length) return;
     await onValidateImages(selectedIds, nextValidated);
-  };
+  }, [onValidateImages, isBlocked, selectedIds]);
+
+  const handleDeleteSingle = useCallback((event: React.MouseEvent, imageId: number) => {
+    handleBulkAction(onDeleteImages, [imageId]);
+  }, [handleBulkAction, onDeleteImages]);
 
   if (isCollapsed) {
     return (
@@ -374,89 +496,21 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
               const isSelected = selectedIds.includes(image.id);
               const isCurrent = index === currentIndex;
               return (
-                <ListItem key={image.id} disablePadding>
-                  <ListItemButton
-                    selected={isSelected}
-                    onClick={(event) => handleRowClick(event, itemIndex)}
-                    sx={{
-                      minHeight: rowHeight,
-                      borderRadius: 1.5,
-                      gap: 1,
-                      alignItems: "center",
-                      borderLeft: isCurrent ? "3px solid #4ea8ff" : "3px solid transparent",
-                      backgroundColor: "rgba(255,255,255,0.02)",
-                      transition: "background-color 150ms ease, box-shadow 150ms ease",
-                      "&:hover": {
-                        backgroundColor: "rgba(255,255,255,0.06)",
-                      },
-                      "&.Mui-selected": {
-                        backgroundColor: "rgba(78,168,255,0.16)",
-                        boxShadow: "0 0 0 1px rgba(78,168,255,0.2)",
-                      },
-                      "&.Mui-selected:hover": {
-                        backgroundColor: "rgba(78,168,255,0.22)",
-                      },
-                    }}
-                  >
-                    {showThumbnails && (
-                      <Box
-                        sx={{
-                          width: 54,
-                          height: 54,
-                          borderRadius: 1,
-                          overflow: "hidden",
-                          flexShrink: 0,
-                          border: "1px solid rgba(255,255,255,0.08)",
-                        }}
-                      >
-                        <img
-                          src={image.thumbnail || image.image}
-                          alt={name}
-                          loading="lazy"
-                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                        />
-                      </Box>
-                    )}
-                    <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                      <Typography variant="body2" noWrap>
-                        <Box
-                          component="span"
-                          sx={{
-                            mr: 0.75,
-                            color: "text.secondary",
-                            fontWeight: 600,
-                            fontVariantNumeric: "tabular-nums",
-                          }}
-                        >
-                          # {index + 1} - 
-                        </Box>
-                        {name}
-                      </Typography>
-                    </Box>
-                    {showOcrActions && image.is_label && (
-                      <Chip
-                        size="small"
-                        label="Validated"
-                        color="success"
-                        sx={{ height: 22 }}
-                      />
-                    )}
-                    <Tooltip title="Delete page">
-                      <span>
-                        <IconButton
-                          size="small"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleBulkAction(onDeleteImages, [image.id]);
-                          }}
-                          disabled={isBlocked}
-                        >
-                          <DeleteOutline fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  </ListItemButton>
-                </ListItem>
+                <PageItem
+                  key={image.id}
+                  image={image}
+                  index={index}
+                  name={name}
+                  itemIndex={itemIndex}
+                  isCurrent={isCurrent}
+                  isSelected={isSelected}
+                  isBlocked={isBlocked || false}
+                  showThumbnails={showThumbnails}
+                  showOcrActions={showOcrActions || false}
+                  rowHeight={rowHeight}
+                  onRowClick={handleRowClick}
+                  onDeleteSingle={handleDeleteSingle}
+                />
               );
             })}
           </List>
