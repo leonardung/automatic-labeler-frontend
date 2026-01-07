@@ -125,6 +125,21 @@ const OCRListItem = memo<OCRListItemProps>(({
   onSelect,
   setItemRef,
 }) => {
+  const [localText, setLocalText] = React.useState(shape.text);
+
+  React.useEffect(() => {
+    setLocalText(shape.text);
+  }, [shape.text]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setLocalText(e.target.value);
+  };
+
+  const handleBlur = () => {
+    onTextChange(shape.id, localText);
+    onTextBlur(shape.id);
+  };
+
   return (
     <Box>
       <ListItemButton
@@ -159,9 +174,10 @@ const OCRListItem = memo<OCRListItemProps>(({
           </Typography>
         </Tooltip>
         <InputBase
-          value={shape.text}
-          onChange={(e) => onTextChange(shape.id, e.target.value)}
-          onBlur={() => onTextBlur(shape.id)}
+          value={localText}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          onClick={(e) => e.stopPropagation()}
           disabled={disabled}
           sx={{
             px: 1,
