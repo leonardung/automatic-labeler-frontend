@@ -420,54 +420,35 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
       }
 
       try {
-        const results = await Promise.allSettled(
-          targets.map((img) =>
-            axiosInstance.patch<ImageModel>(`${imageEndpointBase}/${img.id}/`, {
-              is_label: nextValidated,
-            })
-          )
-        );
-        const updatedImages: ImageModel[] = [];
-        let failed = 0;
-        results.forEach((result, idx) => {
-          if (result.status === "fulfilled") {
-            const payload = result.value.data || { ...targets[idx], is_label: nextValidated };
-            updatedImages.push(decorateImage(payload));
-          } else {
-            failed += 1;
-          }
+        const response = await axiosInstance.post(`${imageEndpointBase}/bulk_update_validation/`, {
+          image_ids: targets.map((img) => img.id),
+          is_label: nextValidated,
         });
-        if (updatedImages.length) {
-          const updatesById = new Map(updatedImages.map((img) => [img.id, img]));
-          setImages((prev) =>
-            prev.map((img) => (updatesById.has(img.id) ? { ...img, ...updatesById.get(img.id)! } : img))
-          );
-          setProject((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  images: prev.images.map((img) =>
-                    updatesById.has(img.id) ? { ...img, ...updatesById.get(img.id)! } : img
-                  ),
-                }
-              : prev
-          );
-        }
-        if (failed) {
-          setNotification({
-            open: true,
-            message: `${failed} page(s) failed to update validation.`,
-            severity: "error",
-          });
-        } else {
-          setNotification({
-            open: true,
-            message: nextValidated
-              ? `Validated ${updatedImages.length} page(s).`
-              : `Unvalidated ${updatedImages.length} page(s).`,
-            severity: "success",
-          });
-        }
+
+        const updatedImages = (response.data.images || []).map(decorateImage);
+        const updatesById = new Map(updatedImages.map((img: ImageModel) => [img.id, img]));
+
+        setImages((prev) =>
+          prev.map((img) => (updatesById.has(img.id) ? { ...img, ...updatesById.get(img.id)! } : img))
+        );
+        setProject((prev) =>
+          prev
+            ? {
+                ...prev,
+                images: prev.images.map((img) =>
+                  updatesById.has(img.id) ? { ...img, ...updatesById.get(img.id)! } : img
+                ),
+              }
+            : prev
+        );
+
+        setNotification({
+          open: true,
+          message: nextValidated
+            ? `Validated ${updatedImages.length} page(s).`
+            : `Unvalidated ${updatedImages.length} page(s).`,
+          severity: "success",
+        });
       } catch (error) {
         console.error("Error updating validation for selected pages:", error);
         setNotification({

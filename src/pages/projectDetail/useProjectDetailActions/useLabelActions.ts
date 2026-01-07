@@ -345,16 +345,20 @@ export const useLabelActions = (state: ProjectDetailState, deps: LabelDependenci
       if (isOCRProject) {
         startBlocking(`Clearing OCR annotations for ${targets.length} page(s)...`);
         try {
+          // Record history for each image before clearing
           for (const targetImage of targets) {
             recordOcrHistory(
               targetImage.id,
               cloneOcrAnnotations(targetImage.ocr_annotations || []),
               []
             );
-            await axiosInstance.delete(`${imageEndpointBase}/${targetImage.id}/ocr_annotations/`, {
-              data: { ids: [] },
-            });
           }
+
+          // Use bulk endpoint for clearing
+          await axiosInstance.post(`${imageEndpointBase}/bulk_clear_annotations/`, {
+            image_ids: uniqueIds,
+          });
+
           setImages((prev) =>
             prev.map((img) =>
               uniqueIds.includes(img.id) ? { ...img, ocr_annotations: [] } : img
@@ -393,9 +397,11 @@ export const useLabelActions = (state: ProjectDetailState, deps: LabelDependenci
 
       startBlocking(`Clearing annotations for ${targets.length} page(s)...`);
       try {
-        for (const targetImage of targets) {
-          await axiosInstance.delete(`images/${targetImage.id}/delete_mask/`);
-        }
+        // Use bulk endpoint for segmentation masks
+        await axiosInstance.post(`images/bulk_clear_annotations/`, {
+          image_ids: uniqueIds,
+        });
+
         setImages((prev) =>
           prev.map((img) => (uniqueIds.includes(img.id) ? { ...img, masks: [] } : img))
         );
