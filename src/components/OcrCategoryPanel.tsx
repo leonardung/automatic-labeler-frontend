@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useState } from "react";
+import React, { forwardRef, useEffect, useState, memo, useMemo, useCallback } from "react";
 import {
   Box,
   Typography,
@@ -78,11 +78,132 @@ const hexToRgba = (hex: string, alpha = 0.6) => {
   return `rgba(${r},${g},${b},${alpha})`;
 };
 
+const contrastTextCache = new Map<string, string>();
 const contrastText = (bg: string) => {
-  const { r, g, b } = parseToRgb(bg);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.6 ? "#0b1220" : "#ffffff";
+  if (!contrastTextCache.has(bg)) {
+    const { r, g, b } = parseToRgb(bg);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    contrastTextCache.set(bg, luminance > 0.6 ? "#0b1220" : "#ffffff");
+  }
+  return contrastTextCache.get(bg)!;
 };
+
+interface CategoryItemProps {
+  cat: MaskCategory;
+  isActive: boolean;
+  disabled: boolean;
+  onSelectCategory: (categoryId: number) => void;
+  onColorChange: (categoryId: number, color: string) => void;
+  onRenameCategory: (categoryId: number, name: string) => void;
+  onDeleteCategory: (categoryId: number) => void;
+}
+
+const CategoryItem = memo<CategoryItemProps>(({
+  cat,
+  isActive,
+  disabled,
+  onSelectCategory,
+  onColorChange,
+  onRenameCategory,
+  onDeleteCategory,
+}) => {
+  const hexColor = useMemo(() => toHex(parseToRgb(cat.color)), [cat.color]);
+  const textColor = useMemo(() => contrastText(cat.color), [cat.color]);
+
+  const handleRename = useCallback(() => {
+    const next = window.prompt("Rename category", cat.name);
+    if (next && next.trim() && next.trim() !== cat.name) {
+      onRenameCategory(cat.id, next.trim());
+    }
+  }, [cat.name, cat.id, onRenameCategory]);
+
+  const handleColorChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    onColorChange(cat.id, hexToRgba(e.target.value, 0.6));
+  }, [cat.id, onColorChange]);
+
+  const handleSelect = useCallback(() => {
+    onSelectCategory(cat.id);
+  }, [cat.id, onSelectCategory]);
+
+  const handleDelete = useCallback(() => {
+    onDeleteCategory(cat.id);
+  }, [cat.id, onDeleteCategory]);
+
+  return (
+    <Box
+      sx={{
+        display: "grid",
+        gridTemplateColumns: "30px 1fr 28px 28px",
+        alignItems: "center",
+        gap: 0.5,
+        px: 0.75,
+        py: 0.4,
+        borderRadius: 1,
+        border: isActive ? "1px solid rgba(90,216,255,0.6)" : "1px solid transparent",
+        backgroundColor: isActive ? "rgba(90,216,255,0.1)" : "rgba(255,255,255,0.03)",
+        width: "100%",
+      }}
+    >
+      <Box
+        component="input"
+        type="color"
+        value={hexColor}
+        disabled={disabled}
+        onClick={(e) => e.stopPropagation()}
+        onChange={handleColorChange}
+        style={{
+          width: 24,
+          height: 24,
+          border: "none",
+          borderRadius: 6,
+          padding: 0,
+          background: "transparent",
+          cursor: disabled ? "not-allowed" : "pointer",
+        }}
+      />
+      <Chip
+        label={cat.name}
+        onClick={handleSelect}
+        clickable
+        sx={{
+          bgcolor: cat.color,
+          color: textColor,
+          fontWeight: 700,
+          height: 24,
+          width: "100%",
+          "& .MuiChip-label": {
+            width: "100%",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          },
+          "&:hover": { opacity: 0.9 },
+        }}
+      />
+      <Tooltip title="Rename category">
+        <IconButton
+          size="small"
+          onClick={handleRename}
+          disabled={disabled}
+          sx={{ color: "rgba(255,255,255,0.7)" }}
+        >
+          <EditIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Tooltip title="Delete category">
+        <IconButton
+          size="small"
+          onClick={handleDelete}
+          disabled={disabled}
+          sx={{ color: "rgba(255,255,255,0.7)" }}
+        >
+          <DeleteIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+    </Box>
+  );
+});
+
+CategoryItem.displayName = "CategoryItem";
 
 const OcrCategoryPanel = forwardRef<HTMLDivElement, OcrCategoryPanelProps>(({
   categories,
@@ -101,95 +222,13 @@ const OcrCategoryPanel = forwardRef<HTMLDivElement, OcrCategoryPanelProps>(({
     setColor(colorForIndex(categories.length || 0));
   }, [categories.length]);
 
-  const handleAdd = () => {
+  const handleAdd = useCallback(() => {
     const trimmed = name.trim();
     if (!trimmed) return;
     onAddCategory(trimmed, color);
     setName("");
     setColor(colorForIndex(categories.length + 1));
-  };
-
-  const renderCategory = (cat: MaskCategory) => {
-    const isActive = activeCategoryId === cat.id;
-    return (
-      <Box
-        key={cat.id}
-        sx={{
-          display: "grid",
-          gridTemplateColumns: "30px 1fr 28px 28px",
-          alignItems: "center",
-          gap: 0.5,
-          px: 0.75,
-          py: 0.4,
-          borderRadius: 1,
-          border: isActive ? "1px solid rgba(90,216,255,0.6)" : "1px solid transparent",
-          backgroundColor: isActive ? "rgba(90,216,255,0.1)" : "rgba(255,255,255,0.03)",
-          width: "100%",
-        }}
-      >
-        <Box
-          component="input"
-          type="color"
-          value={toHex(parseToRgb(cat.color))}
-          disabled={disabled}
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => onColorChange(cat.id, hexToRgba(e.target.value, 0.6))}
-          style={{
-            width: 24,
-            height: 24,
-            border: "none",
-            borderRadius: 6,
-            padding: 0,
-            background: "transparent",
-            cursor: disabled ? "not-allowed" : "pointer",
-          }}
-        />
-        <Chip
-          label={cat.name}
-          onClick={() => onSelectCategory(cat.id)}
-          clickable
-          sx={{
-            bgcolor: cat.color,
-            color: contrastText(cat.color),
-            fontWeight: 700,
-            height: 24,
-            width: "100%",
-            "& .MuiChip-label": {
-              width: "100%",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            },
-            "&:hover": { opacity: 0.9 },
-          }}
-        />
-        <Tooltip title="Rename category">
-          <IconButton
-            size="small"
-            onClick={() => {
-              const next = window.prompt("Rename category", cat.name);
-              if (next && next.trim() && next.trim() !== cat.name) {
-                onRenameCategory(cat.id, next.trim());
-              }
-            }}
-            disabled={disabled}
-            sx={{ color: "rgba(255,255,255,0.7)" }}
-          >
-            <EditIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Delete category">
-          <IconButton
-            size="small"
-            onClick={() => onDeleteCategory(cat.id)}
-            disabled={disabled}
-            sx={{ color: "rgba(255,255,255,0.7)" }}
-          >
-            <DeleteIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </Box>
-    );
-  };
+  }, [name, color, onAddCategory, categories.length]);
 
   return (
     <Box
@@ -207,7 +246,18 @@ const OcrCategoryPanel = forwardRef<HTMLDivElement, OcrCategoryPanelProps>(({
         Categories
       </Typography>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 0.6, mb: 1 }}>
-        {categories.map((cat) => renderCategory(cat))}
+        {categories.map((cat) => (
+          <CategoryItem
+            key={cat.id}
+            cat={cat}
+            isActive={activeCategoryId === cat.id}
+            disabled={disabled || false}
+            onSelectCategory={onSelectCategory}
+            onColorChange={onColorChange}
+            onRenameCategory={onRenameCategory}
+            onDeleteCategory={onDeleteCategory}
+          />
+        ))}
         {categories.length === 0 && (
           <Typography variant="body2" color="rgba(255,255,255,0.7)">
             No categories yet.
