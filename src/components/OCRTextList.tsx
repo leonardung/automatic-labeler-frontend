@@ -105,7 +105,7 @@ interface OCRListItemProps {
   showCategories: boolean;
   categoryMap: Record<string, MaskCategory>;
   onTextChange: (id: string, text: string) => void;
-  onTextBlur: (id: string) => void;
+  onTextBlur: (id: string, text: string) => void;
   onDelete: (e: React.MouseEvent, id: string) => void;
   onSelect: (e: React.MouseEvent, shapeId: string, isSelected: boolean) => void;
   setItemRef: (id: string, el: HTMLDivElement | null) => void;
@@ -141,9 +141,12 @@ const OCRListItem = memo<OCRListItemProps>(({
 
   const handleBlur = () => {
     if (hasUnsavedChanges.current) {
-      onTextChange(shape.id, localText);
-      onTextBlur(shape.id);
       hasUnsavedChanges.current = false;
+      // Delay the save to allow focus to transfer to the next input
+      // We use requestAnimationFrame to wait until after the browser has processed the focus event
+      requestAnimationFrame(() => {
+        onTextBlur(shape.id, localText);
+      });
     }
   };
 
@@ -184,6 +187,7 @@ const OCRListItem = memo<OCRListItemProps>(({
           value={localText}
           onChange={handleChange}
           onBlur={handleBlur}
+          onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
           disabled={disabled}
           sx={{
@@ -291,14 +295,19 @@ const OCRTextList: React.FC<OCRTextListProps> = ({
     onImageUpdatedRef.current({ ...imageRef.current, ocr_annotations: newAnnotations });
   }, []);
 
-  const handleTextBlur = useCallback(async (id: string) => {
+  const handleTextBlur = useCallback(async (id: string, newText: string) => {
     const currentAnnotations = annotationsRef.current;
     const shape = currentAnnotations.find((s) => s.id === id);
     if (shape) {
+      const updatedShape = { ...shape, text: newText };
       try {
         await axiosInstance.post(`${endpointBase}/${imageRef.current.id}/ocr_annotations/`, {
-          shapes: [shape],
+          shapes: [updatedShape],
         });
+        // Update refs silently without triggering a re-render that would lose focus
+        const newAnnotations = currentAnnotations.map((s) => (s.id === updatedShape.id ? updatedShape : s));
+        annotationsRef.current = newAnnotations;
+        imageRef.current = { ...imageRef.current, ocr_annotations: newAnnotations };
       } catch (error) {
         console.error("Error saving shape text:", error);
       }
