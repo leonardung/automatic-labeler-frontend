@@ -23,6 +23,8 @@ import {
   DeleteSweep,
   PlayArrow,
 } from "@mui/icons-material";
+import { FixedSizeList as VirtualList } from "react-window";
+import type { ListChildComponentProps } from "react-window";
 import type { ImageModel } from "../types";
 import ResizablePanel from "./ResizablePanel";
 
@@ -189,6 +191,9 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
   const [showThumbnails, setShowThumbnails] = useState(true);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const lastSelectedIndexRef = useRef<number | null>(null);
+  const listRef = useRef<VirtualList | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [containerHeight, setContainerHeight] = useState(600);
 
   const items = useMemo(() => {
     const withNames = images.map((image, index) => ({
@@ -205,6 +210,17 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
       (a.image.id || 0) - (b.image.id || 0);
     return withNames.sort(sortBy === "name" ? compareByName : compareById);
   }, [images, sortBy]);
+
+  useEffect(() => {
+    const updateHeight = () => {
+      if (containerRef.current) {
+        setContainerHeight(containerRef.current.clientHeight);
+      }
+    };
+    updateHeight();
+    window.addEventListener('resize', updateHeight);
+    return () => window.removeEventListener('resize', updateHeight);
+  }, []);
 
   useEffect(() => {
     const validIds = new Set(images.map((image) => image.id));
@@ -230,6 +246,19 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
       }
     }
   }, [items, selectedIds]);
+
+  // Scroll to current page when it changes
+  useEffect(() => {
+    if (listRef.current && images.length > 0) {
+      const currentImageId = images[currentIndex]?.id;
+      if (currentImageId) {
+        const idx = items.findIndex((item) => item.image.id === currentImageId);
+        if (idx >= 0) {
+          listRef.current.scrollToItem(idx, "smart");
+        }
+      }
+    }
+  }, [currentIndex, items, images]);
 
   const handleRowClick = useCallback((event: React.MouseEvent, itemIndex: number) => {
     const item = items[itemIndex];
@@ -474,46 +503,51 @@ const PagesPanel: React.FC<PagesPanelProps> = ({
 
       <Divider sx={{ opacity: 0.5 }} />
 
-      <Box sx={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0 }}>
+      <Box
+        ref={containerRef}
+        sx={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0, overflow: "hidden" }}
+      >
         {items.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
             No pages uploaded yet.
           </Typography>
         ) : (
-          <List
-            disablePadding
-            sx={{
-              display: "flex",
-              flexDirection: "column",
-              flexGrow: 1,
-              gap: 0.5,
-              minHeight: 0,
-              overflow: "auto",
-            }}
+          <VirtualList
+            ref={listRef}
+            height={containerHeight}
+            itemCount={items.length}
+            itemSize={rowHeight}
+            width="100%"
+            overscanCount={5}
           >
-            {items.map((item, itemIndex) => {
+            {({ index: itemIndex, style }: ListChildComponentProps) => {
+              const item = items[itemIndex];
+              if (!item) {
+                return <div style={style} />;
+              }
               const { image, index, name } = item;
               const isSelected = selectedIds.includes(image.id);
               const isCurrent = index === currentIndex;
               return (
-                <PageItem
-                  key={image.id}
-                  image={image}
-                  index={index}
-                  name={name}
-                  itemIndex={itemIndex}
-                  isCurrent={isCurrent}
-                  isSelected={isSelected}
-                  isBlocked={isBlocked || false}
-                  showThumbnails={showThumbnails}
-                  showOcrActions={showOcrActions || false}
-                  rowHeight={rowHeight}
-                  onRowClick={handleRowClick}
-                  onDeleteSingle={handleDeleteSingle}
-                />
+                <div style={style}>
+                  <PageItem
+                    image={image}
+                    index={index}
+                    name={name}
+                    itemIndex={itemIndex}
+                    isCurrent={isCurrent}
+                    isSelected={isSelected}
+                    isBlocked={isBlocked || false}
+                    showThumbnails={showThumbnails}
+                    showOcrActions={showOcrActions || false}
+                    rowHeight={rowHeight}
+                    onRowClick={handleRowClick}
+                    onDeleteSingle={handleDeleteSingle}
+                  />
+                </div>
               );
-            })}
-          </List>
+            }}
+          </VirtualList>
         )}
       </Box>
     </ResizablePanel>
