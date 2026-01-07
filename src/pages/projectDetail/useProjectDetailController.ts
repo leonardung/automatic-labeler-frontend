@@ -20,6 +20,7 @@ export const useProjectDetailController = () => {
     images: state.images,
     isImportingDataset: state.isImportingDataset,
     datasetImportProgress: state.datasetImportProgress,
+    onCancelBulkInference: actions.handleCancelBulkInference,
   };
 
   const headerProps = {

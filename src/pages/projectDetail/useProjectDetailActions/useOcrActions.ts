@@ -33,6 +33,7 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
     setNotification,
     setBulkOcrStatus,
     setIsBulkOcrRunning,
+    bulkOcrAbortControllerRef,
     categories,
     setOcrTool,
     setShowOcrText,
@@ -616,6 +617,10 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
       ? "recognizing"
       : "classifying";
 
+    // Create abort controller for cancellation
+    const abortController = new AbortController();
+    bulkOcrAbortControllerRef.current = abortController;
+
     setIsBulkOcrRunning(true);
     setBulkOcrStatus(
       targets.reduce(
@@ -628,6 +633,12 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
 
     try {
       for (const img of targets) {
+        // Check if cancelled
+        if (abortController.signal.aborted) {
+          console.log("Bulk inference cancelled by user");
+          break;
+        }
+
         if (!img.id) continue;
         setBulkOcrStatus((prev) => ({ ...prev, [img.id!]: { status: firstStage } }));
         try {
@@ -648,6 +659,7 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
       }
     } finally {
       setIsBulkOcrRunning(false);
+      bulkOcrAbortControllerRef.current = null;
       stopBlocking();
     }
   }, [
@@ -662,6 +674,7 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
     setNotification,
     startBlocking,
     stopBlocking,
+    bulkOcrAbortControllerRef,
   ]);
 
   const handleOcrToolChange = useCallback(
@@ -677,6 +690,12 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
     },
     [setShowOcrText]
   );
+
+  const handleCancelBulkInference = useCallback(() => {
+    if (bulkOcrAbortControllerRef.current) {
+      bulkOcrAbortControllerRef.current.abort();
+    }
+  }, [bulkOcrAbortControllerRef]);
 
   return {
     toggleOcrModel,
@@ -695,6 +714,7 @@ export const useOcrActions = (state: ProjectDetailState, deps: OcrDependencies) 
     handleFullInference,
     handleRunInferenceForImages,
     handleBulkDetectRecognize,
+    handleCancelBulkInference,
     handleOcrToolChange,
     handleShowOcrTextChange,
   };

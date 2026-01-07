@@ -90,6 +90,7 @@ export const useProjectDetailState = () => {
     { status: BulkOcrStage; error?: string }
   >>({});
   const [isBulkOcrRunning, setIsBulkOcrRunning] = useState(false);
+  const bulkOcrAbortControllerRef = useRef<AbortController | null>(null);
   const [showOcrText, setShowOcrText] = useState(false);
   const progressIntervalRef = useRef<number | null>(null);
   const datasetProgressIntervalRef = useRef<number | null>(null);
@@ -186,6 +187,7 @@ export const useProjectDetailState = () => {
     setBulkOcrStatus,
     isBulkOcrRunning,
     setIsBulkOcrRunning,
+    bulkOcrAbortControllerRef,
     showOcrText,
     setShowOcrText,
     progressIntervalRef,
