@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: automatic-labeler-frontend
+    volumes:
+      - .:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_BASE_URL=${REACT_APP_API_BASE_URL:-http://localhost:8000/api/}
+      - REACT_APP_ENV=${REACT_APP_ENV:-docker}
+      - REACT_APP_NAME=${REACT_APP_NAME:-Automatic Labeler}
+      - REACT_APP_ENABLE_DEBUG=${REACT_APP_ENABLE_DEBUG:-true}
+    networks:
+      - app-network
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+networks:
+  app-network:
+    driver: bridge
