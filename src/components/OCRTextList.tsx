@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, memo, useCallback } from "react";
 import {
   Box,
   Typography,
-  List,
   ListItemButton,
   IconButton,
   Paper,
@@ -126,18 +125,26 @@ const OCRListItem = memo<OCRListItemProps>(({
   setItemRef,
 }) => {
   const [localText, setLocalText] = React.useState(shape.text);
+  const hasUnsavedChanges = React.useRef(false);
 
   React.useEffect(() => {
-    setLocalText(shape.text);
+    // Only update local text if we don't have unsaved changes
+    if (!hasUnsavedChanges.current) {
+      setLocalText(shape.text);
+    }
   }, [shape.text]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setLocalText(e.target.value);
+    hasUnsavedChanges.current = true;
   };
 
   const handleBlur = () => {
-    onTextChange(shape.id, localText);
-    onTextBlur(shape.id);
+    if (hasUnsavedChanges.current) {
+      onTextChange(shape.id, localText);
+      onTextBlur(shape.id);
+      hasUnsavedChanges.current = false;
+    }
   };
 
   return (
