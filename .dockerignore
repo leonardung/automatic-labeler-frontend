@@ -3,7 +3,6 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-package-lock.json
 yarn.lock
 
 # Production build
@@ -56,7 +55,6 @@ docs/
 Dockerfile
 docker-compose.yml
 .dockerignore
-nginx.conf
 
 # Scripts (if not needed in container)
 scripts/run_local.*
